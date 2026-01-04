@@ -1,0 +1,61 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Strategies - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Trading Strategies</h2>
+    
+    {% if strategies %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Module Path</th>
+                <th>Backtests</th>
+                <th>Active</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for strategy in strategies %}
+            <tr>
+                <td><strong>{{ strategy.name }}</strong></td>
+                <td>{{ strategy.description|truncatewords:20 }}</td>
+                <td><code style="font-size: 0.85rem;">{{ strategy.module_path }}</code></td>
+                <td>{{ strategy.backtest_count }}</td>
+                <td>
+                    {% if strategy.is_active %}
+                    <span style="color: #27ae60;">✓ Active</span>
+                    {% else %}
+                    <span style="color: #e74c3c;">✗ Inactive</span>
+                    {% endif %}
+                </td>
+                <td>{{ strategy.created_at|date:"Y-m-d" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No strategies found. Add strategies via Django admin.</p>
+    {% endif %}
+    
+    <p style="margin-top: 1.5rem;">
+        <a href="/admin/trading/strategy/add/" class="btn">Add New Strategy</a>
+        <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Run Backtest</a>
+    </p>
+</div>
+
+<div class="card">
+    <h2>Available Built-in Strategies</h2>
+    
+    <h3>1. MACD RSI Confluence</h3>
+    <p><strong>Module:</strong> <code>core_engine.strategies.macd_rsi_confluence:MACDRSIStrategy</code></p>
+    <p>Baseline strategy using MACD and RSI with volatility and volume filters.</p>
+    
+    <h3>2. Momentum Rank</h3>
+    <p><strong>Module:</strong> <code>core_engine.strategies.momentum_rank:MomentumRankStrategy</code></p>
+    <p>Ranks symbols by multi-timeframe momentum score.</p>
+</div>
+{% endblock %}

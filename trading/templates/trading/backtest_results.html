@@ -1,0 +1,164 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Backtest Results #{{ backtest.id }} - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Backtest #{{ backtest.id }} - {{ backtest.strategy.name }}</h2>
+    
+    <p><strong>Status:</strong> <span class="status-{{ backtest.status }}">{{ backtest.get_status_display }}</span></p>
+    <p><strong>Period:</strong> {{ backtest.start_time|date:"Y-m-d H:i" }} to {{ backtest.end_time|date:"Y-m-d H:i" }}</p>
+    <p><strong>Symbols:</strong> {{ backtest.symbol_universe|join:", " }}</p>
+    <p><strong>Window:</strong> {{ backtest.window_hours }}h (shift: {{ backtest.shift_hours }}h)</p>
+    <p><strong>Fees:</strong> {{ backtest.fee_bps }} bps</p>
+    
+    {% if backtest.status == 'failed' %}
+    <div style="background: #f8d7da; padding: 1rem; border-radius: 4px; margin-top: 1rem;">
+        <strong>Error:</strong> {{ backtest.error_message }}
+    </div>
+    {% endif %}
+    
+    {% if backtest.status == 'pending' %}
+    <div style="background: #fff3cd; padding: 1rem; border-radius: 4px; margin-top: 1rem;">
+        <strong>Run this backtest:</strong>
+        <pre style="margin-top: 0.5rem;">python manage.py run_backtest --strategy "{{ backtest.strategy.name }}" --symbols "{{ backtest.symbol_universe|join:"," }}" --start-date "{{ backtest.start_time|date:"Y-m-d H:i" }}" --end-date "{{ backtest.end_time|date:"Y-m-d H:i" }}"</pre>
+    </div>
+    {% endif %}
+</div>
+
+{% if performance %}
+<div class="card">
+    <h2>Performance Summary</h2>
+    
+    <div style="margin: 1.5rem 0;">
+        <div class="metric">
+            <div class="metric-value">{{ performance.total_trades }}</div>
+            <div class="metric-label">Total Trades</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value">{{ performance.win_rate|floatformat:1 }}%</div>
+            <div class="metric-label">Win Rate</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value {% if performance.avg_return_pct > 0 %}positive{% else %}negative{% endif %}">
+                {{ performance.avg_return_pct|floatformat:2 }}%
+            </div>
+            <div class="metric-label">Avg Return</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value {% if performance.total_return_pct > 0 %}positive{% else %}negative{% endif %}">
+                {{ performance.total_return_pct|floatformat:2 }}%
+            </div>
+            <div class="metric-label">Total Return</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value negative">{{ performance.max_drawdown|floatformat:2 }}%</div>
+            <div class="metric-label">Max Drawdown</div>
+        </div>
+        
+        {% if performance.profit_factor %}
+        <div class="metric">
+            <div class="metric-value">{{ performance.profit_factor|floatformat:2 }}</div>
+            <div class="metric-label">Profit Factor</div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <table style="margin-top: 1rem;">
+        <tr>
+            <td><strong>Winning Trades:</strong></td>
+            <td>{{ performance.winning_trades }}</td>
+        </tr>
+        <tr>
+            <td><strong>Losing Trades:</strong></td>
+            <td>{{ performance.losing_trades }}</td>
+        </tr>
+        <tr>
+            <td><strong>Median Return:</strong></td>
+            <td>{{ performance.median_return_pct|floatformat:2 }}%</td>
+        </tr>
+    </table>
+</div>
+{% endif %}
+
+{% if symbol_stats %}
+<div class="card">
+    <h2>Per-Symbol Statistics</h2>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Trades</th>
+                <th>Win Rate</th>
+                <th>Avg Return</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for symbol, stats in symbol_stats.items %}
+            <tr>
+                <td><strong>{{ symbol }}</strong></td>
+                <td>{{ stats.total_trades }}</td>
+                <td>{{ stats.win_rate|floatformat:1 }}%</td>
+                <td class="{% if stats.avg_return > 0 %}positive{% else %}negative{% endif %}">
+                    {{ stats.avg_return|floatformat:2 }}%
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if trades %}
+<div class="card">
+    <h2>Trades (showing {{ trades|length }} of {{ total_trades }})</h2>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Entry Time</th>
+                <th>Exit Time</th>
+                <th>Direction</th>
+                <th>Return %</th>
+                <th>Max DD %</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for trade in trades %}
+            <tr>
+                <td><strong>{{ trade.symbol }}</strong></td>
+                <td>{{ trade.entry_time|date:"Y-m-d H:i" }}</td>
+                <td>{{ trade.exit_time|date:"Y-m-d H:i" }}</td>
+                <td>{{ trade.direction }}</td>
+                <td class="{% if trade.return_pct > 0 %}positive{% else %}negative{% endif %}">
+                    {{ trade.return_pct|floatformat:2 }}%
+                </td>
+                <td class="negative">{{ trade.max_drawdown|floatformat:2 }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if total_trades > trades|length %}
+    <p style="margin-top: 1rem; color: #7f8c8d;">
+        <em>Showing first {{ trades|length }} trades. View all {{ total_trades }} trades in Django admin.</em>
+    </p>
+    {% endif %}
+</div>
+{% else %}
+<div class="card">
+    <p>No trade results yet. Run the backtest using the management command.</p>
+</div>
+{% endif %}
+
+<p style="margin-top: 1rem;">
+    <a href="{% url 'trading:index' %}" class="btn">Back to Home</a>
+    <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Run Another Backtest</a>
+</p>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Home - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Dashboard</h2>
+    
+    <div style="margin: 2rem 0;">
+        <div class="metric">
+            <div class="metric-value">{{ total_strategies }}</div>
+            <div class="metric-label">Active Strategies</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value">{{ total_backtests }}</div>
+            <div class="metric-label">Total Backtests</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Backtests</h2>
+    
+    {% if recent_backtests %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Strategy</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for backtest in recent_backtests %}
+            <tr>
+                <td>#{{ backtest.id }}</td>
+                <td>{{ backtest.strategy.name }}</td>
+                <td>{{ backtest.start_time|date:"Y-m-d" }} to {{ backtest.end_time|date:"Y-m-d" }}</td>
+                <td class="status-{{ backtest.status }}">{{ backtest.get_status_display }}</td>
+                <td>{{ backtest.created_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                    <a href="{% url 'trading:backtest_results' backtest.id %}" class="btn">View Results</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No backtests yet. <a href="{% url 'trading:backtest_run' %}">Run your first backtest</a></p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Quick Start</h2>
+    
+    <h3>1. Ingest Market Data</h3>
+    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+python manage.py ingest_market_data --symbols "BTCUSDT,ETHUSDT" --start-date 30 --provider ccxt --exchange binance
+    </pre>
+    
+    <h3>2. Run a Backtest (via Django Admin or Command)</h3>
+    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+python manage.py run_backtest --strategy "MACD RSI Confluence" --symbols "BTCUSDT,ETHUSDT" \
+    --start-date "2025-01-01 00:00" --end-date "2025-01-15 00:00"
+    </pre>
+    
+    <p style="margin-top: 1rem;">
+        <a href="{% url 'trading:strategy_list' %}" class="btn">View Strategies</a>
+        <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Create Backtest</a>
+    </p>
+</div>
+{% endblock %}

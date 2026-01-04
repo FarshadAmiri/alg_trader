@@ -1,0 +1,21 @@
+# Algo Trader - Requirements
+
+# Django
+Django>=4.2,<5.0
+django-extensions>=3.2
+
+# Data processing
+pandas>=2.0
+numpy>=1.24
+
+# Exchange APIs
+requests>=2.31
+ccxt>=4.0  # Optional: For multi-exchange support
+
+# Database
+psycopg2-binary>=2.9  # PostgreSQL support (optional)
+
+# Optional: For advanced features
+# celery>=5.3  # Background tasks
+# redis>=5.0  # Celery broker
+# python-decouple>=3.8  # Environment configuration
