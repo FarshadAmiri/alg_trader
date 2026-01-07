@@ -6,6 +6,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import BacktestRun, Strategy, Candle
 import importlib
+import json
 
 
 class BacktestRunForm(forms.ModelForm):
@@ -65,6 +66,8 @@ class BacktestRunForm(forms.ModelForm):
         # Populate strategy choices with timeframe
         strategies = Strategy.objects.filter(is_active=True)
         strategy_choices = []
+        self.strategy_timeframes = {}  # Map strategy ID to timeframe
+        
         for strategy in strategies:
             try:
                 module_path, class_name = strategy.module_path.split(':')
@@ -73,6 +76,7 @@ class BacktestRunForm(forms.ModelForm):
                 strategy_instance = strategy_class(parameters=strategy.parameters)
                 timeframe = strategy_instance.preferred_timeframe
                 label = f"{strategy.name} ({timeframe})"
+                self.strategy_timeframes[str(strategy.id)] = timeframe
                 print(f"[FORM DEBUG] Strategy: {label}")  # Debug
             except Exception as e:
                 print(f"[FORM DEBUG] Error loading {strategy.name}: {e}")  # Debug
@@ -81,16 +85,24 @@ class BacktestRunForm(forms.ModelForm):
         
         self.fields['strategy'].choices = [('', '---------')] + strategy_choices
         self.fields['strategy'].widget.choices = self.fields['strategy'].choices  # Explicitly set widget choices
+        self.fields['strategy'].widget.attrs['data-timeframes'] = json.dumps(self.strategy_timeframes)
         print(f"[FORM DEBUG] Final choices: {self.fields['strategy'].choices}")  # Debug
         
-        # Get available symbols from ingested data
-        symbols_data = Candle.objects.values('symbol', 'timeframe').distinct().order_by('symbol', 'timeframe')
+        # Get available symbols from ingested data, grouped by timeframe
+        symbols_data = Candle.objects.values('symbol', 'timeframe').distinct().order_by('timeframe', 'symbol')
         symbol_choices = []
         symbol_info = {}
+        self.symbols_by_timeframe = {}  # Map timeframe to list of symbols
         
         for item in symbols_data:
             symbol = item['symbol']
             timeframe = item['timeframe']
+            
+            # Track symbols by timeframe
+            if timeframe not in self.symbols_by_timeframe:
+                self.symbols_by_timeframe[timeframe] = []
+            if symbol not in self.symbols_by_timeframe[timeframe]:
+                self.symbols_by_timeframe[timeframe].append(symbol)
             
             # Get date range for this symbol/timeframe
             candles = Candle.objects.filter(symbol=symbol, timeframe=timeframe)
@@ -99,26 +111,21 @@ class BacktestRunForm(forms.ModelForm):
                 max_date = candles.latest('timestamp').timestamp
                 count = candles.count()
                 
-                # Use symbol as value (strategy will use its preferred timeframe)
+                # Use symbol|timeframe as value for proper filtering
                 label = f"{symbol} ({timeframe}) - {count} candles - {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
-                symbol_choices.append((symbol, label))
+                value = f"{symbol}|{timeframe}"
+                symbol_choices.append((value, label))
                 
                 # Store info for later use
-                if symbol not in symbol_info:
-                    symbol_info[symbol] = {
-                        'min_date': min_date,
-                        'max_date': max_date,
-                        'timeframes': [timeframe]
-                    }
-                else:
-                    if min_date < symbol_info[symbol]['min_date']:
-                        symbol_info[symbol]['min_date'] = min_date
-                    if max_date > symbol_info[symbol]['max_date']:
-                        symbol_info[symbol]['max_date'] = max_date
-                    symbol_info[symbol]['timeframes'].append(timeframe)
+                symbol_info[value] = {
+                    'min_date': min_date,
+                    'max_date': max_date,
+                    'timeframe': timeframe
+                }
         
         # Keep all symbol-timeframe combinations (don't remove duplicates)
         self.fields['available_symbols'].choices = symbol_choices
+        self.fields['available_symbols'].widget.attrs['data-timeframe-map'] = json.dumps(self.symbols_by_timeframe)
         self.symbol_info = symbol_info
         
         # Set initial date range from available data if not already set

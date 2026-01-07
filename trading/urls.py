@@ -13,6 +13,7 @@ urlpatterns = [
     path('data/ingest-ajax/', views.ingest_data_ajax, name='ingest_data_ajax'),
     path('data/manage/', views.manage_data, name='manage_data'),
     path('data/delete/', views.delete_data, name='delete_data'),
-    path('backtest/run/', views.backtest_run, name='backtest_run'),
+    path('backtests/', views.backtests, name='backtests'),
+    path('backtest/run/', views.backtest_run, name='backtest_run'),  # Legacy redirect
     path('backtest/<int:backtest_id>/results/', views.backtest_results, name='backtest_results'),
 ]

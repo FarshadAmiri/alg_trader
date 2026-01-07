@@ -36,6 +36,20 @@
     {% endif %}
 </div>
 
+{% if chart_data_json %}
+<div class="card">
+    <h2>Price Chart & Trades</h2>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="symbolSelect" style="margin-right: 0.5rem;"><strong>Select Symbol:</strong></label>
+        <select id="symbolSelect" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;">
+        </select>
+    </div>
+    
+    <div id="priceChart" style="width: 100%; height: 600px;"></div>
+</div>
+{% endif %}
+
 {% if performance %}
 <div class="card">
     <h2>Performance Summary</h2>
@@ -171,4 +185,179 @@
     <a href="{% url 'trading:index' %}" class="btn">Back to Home</a>
     <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Run Another Backtest</a>
 </p>
+
+{% if chart_data_json %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js" charset="utf-8"></script>
+<script>
+const chartData = {{ chart_data_json|safe }};
+const symbols = Object.keys(chartData);
+const symbolSelect = document.getElementById('symbolSelect');
+
+// Populate symbol dropdown
+symbols.forEach(symbol => {
+    const option = document.createElement('option');
+    option.value = symbol;
+    option.textContent = symbol;
+    symbolSelect.appendChild(option);
+});
+
+function renderChart(symbol) {
+    const data = chartData[symbol];
+    if (!data || !data.candles || data.candles.length === 0) {
+        document.getElementById('priceChart').innerHTML = '<p style="text-align: center; padding: 2rem; color: #999;">No price data available for ' + symbol + '</p>';
+        return;
+    }
+    
+    const candles = data.candles;
+    const trades = data.trades || [];
+    
+    // Prepare candlestick data
+    const timestamps = candles.map(c => c.timestamp);
+    const opens = candles.map(c => c.open);
+    const highs = candles.map(c => c.high);
+    const lows = candles.map(c => c.low);
+    const closes = candles.map(c => c.close);
+    
+    // Create candlestick trace
+    const candlestickTrace = {
+        type: 'candlestick',
+        x: timestamps,
+        open: opens,
+        high: highs,
+        low: lows,
+        close: closes,
+        name: symbol,
+        increasing: {line: {color: '#27ae60'}},
+        decreasing: {line: {color: '#e74c3c'}}
+    };
+    
+    // Create shapes for vertical lines and holding period highlights
+    const shapes = [];
+    const annotations = [];
+    
+    trades.forEach(trade => {
+        const isLong = trade.direction === 'long' || trade.direction === 'LONG';
+        const profitColor = trade.return_pct > 0 ? '#27ae60' : '#e74c3c';
+        
+        // Vertical line at entry (blue)
+        shapes.push({
+            type: 'line',
+            x0: trade.entry_time,
+            x1: trade.entry_time,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: {
+                color: '#3498db',
+                width: 2,
+                dash: 'solid'
+            }
+        });
+        
+        // Vertical line at exit (color based on profit/loss)
+        shapes.push({
+            type: 'line',
+            x0: trade.exit_time,
+            x1: trade.exit_time,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: {
+                color: profitColor,
+                width: 2,
+                dash: 'solid'
+            }
+        });
+        
+        // Shaded rectangle for holding period
+        shapes.push({
+            type: 'rect',
+            x0: trade.entry_time,
+            x1: trade.exit_time,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            fillcolor: profitColor,
+            opacity: 0.1,
+            line: {width: 0}
+        });
+        
+        // Annotation for entry
+        annotations.push({
+            x: trade.entry_time,
+            y: 0.98,
+            yref: 'paper',
+            text: isLong ? '▲ BUY' : '▼ SHORT',
+            showarrow: false,
+            font: {
+                size: 10,
+                color: '#3498db'
+            },
+            bgcolor: 'rgba(255,255,255,0.8)',
+            borderpad: 2
+        });
+        
+        // Annotation for exit with profit/loss
+        annotations.push({
+            x: trade.exit_time,
+            y: 0.02,
+            yref: 'paper',
+            text: `${isLong ? 'SELL' : 'COVER'}: ${trade.return_pct.toFixed(2)}%`,
+            showarrow: false,
+            font: {
+                size: 10,
+                color: profitColor
+            },
+            bgcolor: 'rgba(255,255,255,0.8)',
+            borderpad: 2
+        });
+    });
+    
+    const layout = {
+        title: {
+            text: symbol + ' Price Chart with Trades',
+            font: {size: 18}
+        },
+        xaxis: {
+            title: 'Time',
+            rangeslider: {visible: true},
+            type: 'date'
+        },
+        yaxis: {
+            title: 'Price (USDT)',
+            fixedrange: false
+        },
+        shapes: shapes,
+        annotations: annotations,
+        hovermode: 'x unified',
+        showlegend: true,
+        legend: {
+            x: 0,
+            y: 1,
+            bgcolor: 'rgba(255,255,255,0.8)'
+        },
+        margin: {l: 60, r: 30, t: 60, b: 100}
+    };
+    
+    const config = {
+        responsive: true,
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+        displaylogo: false
+    };
+    
+    Plotly.newPlot('priceChart', [candlestickTrace], layout, config);
+}
+
+// Render initial chart
+if (symbols.length > 0) {
+    renderChart(symbols[0]);
+}
+
+// Handle symbol change
+symbolSelect.addEventListener('change', function() {
+    renderChart(this.value);
+});
+</script>
+{% endif %}
 {% endblock %}

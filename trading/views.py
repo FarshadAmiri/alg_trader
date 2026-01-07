@@ -53,8 +53,8 @@ def strategy_list(request):
     return render(request, 'trading/strategy_list.html', context)
 
 
-def backtest_run(request):
-    """Run a new backtest."""
+def backtests(request):
+    """List all backtests and create new ones."""
     if request.method == 'POST':
         form = BacktestRunForm(request.POST)
         if form.is_valid():
@@ -92,10 +92,26 @@ def backtest_run(request):
     else:
         form = BacktestRunForm()
     
+    # Get all backtests
+    all_backtests = BacktestRun.objects.select_related('strategy').order_by('-created_at')
+    
+    # Extract timeframe mapping from form for JavaScript
+    import json
+    strategy_timeframes = getattr(form, 'strategy_timeframes', {})
+    symbols_by_timeframe = getattr(form, 'symbols_by_timeframe', {})
+    
     context = {
         'form': form,
+        'backtests': all_backtests,
+        'strategy_timeframes_json': json.dumps(strategy_timeframes),
+        'symbols_by_timeframe_json': json.dumps(symbols_by_timeframe),
     }
-    return render(request, 'trading/backtest_run.html', context)
+    return render(request, 'trading/backtests.html', context)
+
+
+def backtest_run(request):
+    """Legacy redirect to backtests page."""
+    return redirect('trading:backtests')
 
 
 def backtest_results(request, backtest_id):
@@ -126,12 +142,46 @@ def backtest_results(request, backtest_id):
                 'avg_return': avg_return,
             }
     
+    # Prepare chart data (price data + trades for each symbol)
+    import json
+    chart_data = {}
+    for symbol in backtest.symbol_universe:
+        # Get price data for this symbol
+        candles = Candle.objects.filter(
+            symbol=symbol,
+            timeframe=backtest.base_timeframe,
+            timestamp__gte=backtest.start_time,
+            timestamp__lte=backtest.end_time
+        ).order_by('timestamp').values('timestamp', 'open', 'high', 'low', 'close', 'volume')
+        
+        # Get trades for this symbol - extract prices from metadata
+        symbol_trades_raw = trades.filter(symbol=symbol)
+        symbol_trades = []
+        for trade in symbol_trades_raw:
+            symbol_trades.append({
+                'entry_time': trade.entry_time,
+                'exit_time': trade.exit_time,
+                'entry_price': trade.metadata.get('entry_price', 0),
+                'exit_price': trade.metadata.get('exit_price', 0),
+                'return_pct': trade.return_pct,
+                'direction': trade.direction
+            })
+        
+        chart_data[symbol] = {
+            'candles': list(candles),
+            'trades': symbol_trades
+        }
+    
+    # Convert to JSON for JavaScript
+    chart_data_json = json.dumps(chart_data, default=str)
+    
     context = {
         'backtest': backtest,
         'trades': trades[:100],  # Limit display
         'total_trades': trades.count(),
         'performance': performance,
         'symbol_stats': symbol_stats,
+        'chart_data_json': chart_data_json,
     }
     return render(request, 'trading/backtest_results.html', context)
 

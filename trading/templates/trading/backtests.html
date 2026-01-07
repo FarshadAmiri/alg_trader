@@ -1,0 +1,187 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Backtests - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>All Backtests</h2>
+    
+    {% if backtests %}
+    <div style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+        <table>
+            <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 10;">
+                <tr>
+                    <th>ID</th>
+                    <th>Strategy</th>
+                    <th>Symbols</th>
+                    <th>Period</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backtest in backtests %}
+                <tr>
+                    <td>#{{ backtest.id }}</td>
+                    <td><strong>{{ backtest.strategy.name }}</strong></td>
+                    <td>{{ backtest.symbol_universe|slice:":3"|join:", " }}{% if backtest.symbol_universe|length > 3 %}...{% endif %}</td>
+                    <td>{{ backtest.start_time|date:"Y-m-d" }} to {{ backtest.end_time|date:"Y-m-d" }}</td>
+                    <td class="status-{{ backtest.status }}">{{ backtest.get_status_display }}</td>
+                    <td>{{ backtest.created_at|date:"Y-m-d H:i" }}</td>
+                    <td>
+                        <a href="{% url 'trading:backtest_results' backtest.id %}" class="btn" style="padding: 0.3rem 0.8rem; font-size: 0.9rem;">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No backtests yet. Create your first backtest below!</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Create New Backtest</h2>
+    
+    <form method="post" id="backtestForm">
+        {% csrf_token %}
+        
+        {{ form.non_field_errors }}
+        
+        <div class="form-group">
+            {{ form.strategy.label_tag }}
+            {{ form.strategy }}
+            {{ form.strategy.errors }}
+        </div>
+        
+        <div class="form-group" id="symbolsGroup">
+            {{ form.available_symbols.label_tag }}
+            <div id="symbolsHelp" style="margin-bottom: 0.5rem; color: #666; font-size: 0.9rem;">
+                Select a strategy first to filter compatible symbols
+            </div>
+            {{ form.available_symbols }}
+            {{ form.available_symbols.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.custom_symbols.label_tag }}
+            {{ form.custom_symbols }}
+            {% if form.custom_symbols.help_text %}
+                <small>{{ form.custom_symbols.help_text }}</small>
+            {% endif %}
+            {{ form.custom_symbols.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.start_time.label_tag }}
+            {{ form.start_time }}
+            {{ form.start_time.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.end_time.label_tag }}
+            {{ form.end_time }}
+            {{ form.end_time.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.max_hold_override.label_tag }}
+            {{ form.max_hold_override }}
+            {% if form.max_hold_override.help_text %}
+                <small>{{ form.max_hold_override.help_text }}</small>
+            {% endif %}
+            {{ form.max_hold_override.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.fee_bps.label_tag }}
+            {{ form.fee_bps }}
+            {% if form.fee_bps.help_text %}
+                <small>{{ form.fee_bps.help_text }}</small>
+            {% endif %}
+            {{ form.fee_bps.errors }}
+        </div>
+        
+        <div class="form-group">
+            {{ form.slippage_bps.label_tag }}
+            {{ form.slippage_bps }}
+            {% if form.slippage_bps.help_text %}
+                <small>{{ form.slippage_bps.help_text }}</small>
+            {% endif %}
+            {{ form.slippage_bps.errors }}
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Create & Run Backtest</button>
+        <a href="{% url 'trading:index' %}" class="btn">Cancel</a>
+    </form>
+</div>
+
+<script>
+// Strategy timeframe filtering
+const strategySelect = document.getElementById('id_strategy');
+const symbolsCheckboxes = document.querySelectorAll('input[name="available_symbols"]');
+const symbolsGroup = document.getElementById('symbolsGroup');
+const symbolsHelp = document.getElementById('symbolsHelp');
+
+// Get timeframe mapping from view context
+const timeframeMap = {{ symbols_by_timeframe_json|safe }};
+const strategyTimeframes = {{ strategy_timeframes_json|safe }};
+
+console.log('Timeframe Map:', timeframeMap);
+console.log('Strategy Timeframes:', strategyTimeframes);
+
+strategySelect.addEventListener('change', function() {
+    const strategyId = this.value;
+    
+    console.log('Selected strategy ID:', strategyId);
+    
+    if (!strategyId || !strategyTimeframes[strategyId]) {
+        // No strategy selected or no timeframe data - show all symbols
+        symbolsCheckboxes.forEach(cb => {
+            cb.parentElement.style.display = 'block';
+            cb.disabled = false;
+        });
+        symbolsHelp.textContent = 'Select a strategy first to filter compatible symbols';
+        symbolsHelp.style.color = '#666';
+        return;
+    }
+    
+    const requiredTimeframe = strategyTimeframes[strategyId];
+    console.log('Required timeframe:', requiredTimeframe);
+    
+    const compatibleSymbols = timeframeMap[requiredTimeframe] || [];
+    console.log('Compatible symbols:', compatibleSymbols);
+    
+    let visibleCount = 0;
+    symbolsCheckboxes.forEach(cb => {
+        const value = cb.value; // Format: "SYMBOL|TIMEFRAME"
+        const [symbol, timeframe] = value.split('|');
+        
+        if (timeframe === requiredTimeframe) {
+            cb.parentElement.style.display = 'block';
+            cb.disabled = false;
+            visibleCount++;
+        } else {
+            cb.parentElement.style.display = 'none';
+            cb.disabled = true;
+            cb.checked = false; // Uncheck hidden items
+        }
+    });
+    
+    if (visibleCount === 0) {
+        symbolsHelp.textContent = `⚠️ No data available for ${requiredTimeframe} timeframe. Please ingest data first.`;
+        symbolsHelp.style.color = '#e74c3c';
+    } else {
+        symbolsHelp.textContent = `✓ Showing ${visibleCount} symbols with ${requiredTimeframe} data`;
+        symbolsHelp.style.color = '#27ae60';
+    }
+});
+
+// Trigger on page load if strategy is already selected
+if (strategySelect.value) {
+    strategySelect.dispatchEvent(new Event('change'));
+}
+</script>
+{% endblock %}
