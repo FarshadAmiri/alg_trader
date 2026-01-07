@@ -57,6 +57,24 @@ class MomentumFeatures(FeatureComputer):
         ema_26 = df['close'].ewm(span=26, adjust=False).mean()
         df['ema_12_26_distance'] = (ema_12 - ema_26) / ema_26
         
+        # Bollinger Bands (for mean reversion strategies)
+        bb_period = 20
+        bb_std = 2.0
+        sma = df['close'].rolling(window=bb_period).mean()
+        std = df['close'].rolling(window=bb_period).std()
+        
+        df['bb_upper'] = sma + (std * bb_std)
+        df['bb_middle'] = sma
+        df['bb_lower'] = sma - (std * bb_std)
+        
+        # Bollinger Band position (0 = lower band, 1 = upper band, 0.5 = middle)
+        bb_range = df['bb_upper'] - df['bb_lower']
+        df['bb_position'] = (df['close'] - df['bb_lower']) / bb_range
+        df['bb_position'] = df['bb_position'].clip(0, 1)  # Clamp to [0, 1]
+        
+        # Bollinger Band width (volatility measure)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+        
         return df
     
     def _compute_rsi(self, prices: pd.Series, period: int) -> pd.Series:

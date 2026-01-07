@@ -9,6 +9,12 @@
     <form method="post">
         {% csrf_token %}
         
+        {% if form.non_field_errors %}
+        <div style="background: #ffebee; color: #c62828; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+        
         <div class="form-group">
             <label for="{{ form.strategy.id_for_label }}">Strategy</label>
             {{ form.strategy }}
@@ -18,11 +24,38 @@
         </div>
         
         <div class="form-group">
-            <label for="{{ form.symbol_universe_text.id_for_label }}">{{ form.symbol_universe_text.label }}</label>
-            {{ form.symbol_universe_text }}
-            <small>{{ form.symbol_universe_text.help_text }}</small>
-            {% if form.symbol_universe_text.errors %}
-            <span style="color: #e74c3c;">{{ form.symbol_universe_text.errors }}</span>
+            <label>{{ form.available_symbols.label }}</label>
+            {% if form.available_symbols.field.choices %}
+            <div style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; border-radius: 4px; background: #fafafa;">
+                {% for value, label in form.available_symbols.field.choices %}
+                <label style="display: block; cursor: pointer; padding: 0.25rem;">
+                    <input type="checkbox" name="available_symbols" value="{{ value }}" 
+                           {% if value in form.available_symbols.value %}checked{% endif %}>
+                    <span style="margin-left: 0.5rem;">{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="background: #fff3cd; padding: 1rem; border-radius: 4px; border-left: 4px solid #ffc107;">
+                <strong>⚠️ No data available!</strong> Please <a href="{% url 'trading:ingest_data' %}">ingest market data</a> first.
+            </div>
+            {% endif %}
+            {% if form.available_symbols.help_text %}
+            <small style="color: #666;">{{ form.available_symbols.help_text }}</small>
+            {% endif %}
+            {% if form.available_symbols.errors %}
+            <span style="color: #e74c3c;">{{ form.available_symbols.errors }}</span>
+            {% endif %}
+        </div>
+        
+        <div class="form-group">
+            <label for="{{ form.custom_symbols.id_for_label }}">{{ form.custom_symbols.label }}</label>
+            {{ form.custom_symbols }}
+            {% if form.custom_symbols.help_text %}
+            <small style="color: #666;">{{ form.custom_symbols.help_text }}</small>
+            {% endif %}
+            {% if form.custom_symbols.errors %}
+            <span style="color: #e74c3c;">{{ form.custom_symbols.errors }}</span>
             {% endif %}
         </div>
         
@@ -30,6 +63,7 @@
             <div class="form-group">
                 <label for="{{ form.start_time.id_for_label }}">Start Time</label>
                 {{ form.start_time }}
+                <small style="color: #666;">Pre-filled with available data range. Select symbols to adjust.</small>
                 {% if form.start_time.errors %}
                 <span style="color: #e74c3c;">{{ form.start_time.errors }}</span>
                 {% endif %}
@@ -38,40 +72,55 @@
             <div class="form-group">
                 <label for="{{ form.end_time.id_for_label }}">End Time</label>
                 {{ form.end_time }}
+                <small style="color: #666;">Pre-filled with available data range. Select symbols to adjust.</small>
                 {% if form.end_time.errors %}
                 <span style="color: #e74c3c;">{{ form.end_time.errors }}</span>
                 {% endif %}
             </div>
         </div>
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-                <label for="{{ form.base_timeframe.id_for_label }}">Base Timeframe</label>
-                {{ form.base_timeframe }}
-            </div>
-            
-            <div class="form-group">
-                <label for="{{ form.window_hours.id_for_label }}">Window Hours</label>
-                {{ form.window_hours }}
-            </div>
-            
-            <div class="form-group">
-                <label for="{{ form.shift_hours.id_for_label }}">Shift Hours</label>
-                {{ form.shift_hours }}
-            </div>
+        <div id="data-range-info" style="background: #e3f2fd; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; display: none;">
+            <strong>📊 Available Data:</strong>
+            <div id="data-range-text"></div>
+        </div>
+        
+        <div id="strategy-info" style="background: #f3e5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; border-left: 4px solid #9c27b0; display: none;">
+            <strong>⚙️ Strategy Configuration:</strong>
+            <div id="strategy-info-text"></div>
         </div>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
-                <label for="{{ form.fee_bps.id_for_label }}">Fee (bps)</label>
+                <label for="{{ form.fee_bps.id_for_label }}">{{ form.fee_bps.label }}</label>
                 {{ form.fee_bps }}
-                <small>10 bps = 0.10%</small>
+                <small style="color: #666;">{{ form.fee_bps.help_text }}</small>
+                {% if form.fee_bps.errors %}
+                <span style="color: #e74c3c;">{{ form.fee_bps.errors }}</span>
+                {% endif %}
             </div>
             
             <div class="form-group">
-                <label for="{{ form.slippage_bps.id_for_label }}">Slippage (bps)</label>
+                <label for="{{ form.slippage_bps.id_for_label }}">{{ form.slippage_bps.label }}</label>
                 {{ form.slippage_bps }}
+                <small style="color: #666;">{{ form.slippage_bps.help_text }}</small>
+                {% if form.slippage_bps.errors %}
+                <span style="color: #e74c3c;">{{ form.slippage_bps.errors }}</span>
+                {% endif %}
             </div>
+        </div>
+        
+        <div class="form-group">
+            <details style="border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px;">
+                <summary style="cursor: pointer; font-weight: 500; color: #666;">Advanced Options (optional)</summary>
+                <div style="padding-top: 1rem;">
+                    <label for="{{ form.max_hold_override.id_for_label }}">{{ form.max_hold_override.label }}</label>
+                    {{ form.max_hold_override }}
+                    <small style="color: #666;">{{ form.max_hold_override.help_text }}</small>
+                    {% if form.max_hold_override.errors %}
+                    <span style="color: #e74c3c;">{{ form.max_hold_override.errors }}</span>
+                    {% endif %}
+                </div>
+            </details>
         </div>
         
         <button type="submit" class="btn btn-success">Create Backtest</button>
@@ -79,13 +128,127 @@
     </form>
 </div>
 
+<script>
+// Store symbol data info from Django
+const symbolData = {
+    {% for symbol, info in form.symbol_info.items %}
+    '{{ symbol }}': {
+        minDate: '{{ info.min_date|date:"Y-m-d\\TH:i" }}',
+        maxDate: '{{ info.max_date|date:"Y-m-d\\TH:i" }}',
+        timeframes: {{ info.timeframes|safe }}
+    },
+    {% endfor %}
+};
+
+// Strategy metadata (populated from backend)
+const strategyMetadata = {
+    {% for strategy in form.fields.strategy.queryset %}
+    '{{ strategy.id }}': {
+        name: '{{ strategy.name }}',
+        // These will be populated via AJAX or inline if needed
+    }
+    {% endfor %}
+};
+
+// Update date hints when symbols are selected
+document.addEventListener('DOMContentLoaded', function() {
+    const symbolCheckboxes = document.querySelectorAll('input[name="available_symbols"]');
+    const startTimeInput = document.querySelector('input[name="start_time"]');
+    const endTimeInput = document.querySelector('input[name="end_time"]');
+    const strategySelect = document.querySelector('select[name="strategy"]');
+    const dataRangeInfo = document.getElementById('data-range-info');
+    const dataRangeText = document.getElementById('data-range-text');
+    const strategyInfo = document.getElementById('strategy-info');
+    const strategyInfoText = document.getElementById('strategy-info-text');
+    
+    function updateHints() {
+        const selected = Array.from(symbolCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+        
+        if (selected.length === 0) {
+            dataRangeInfo.style.display = 'none';
+            return;
+        }
+        
+        // Find common date range
+        let minDate = null;
+        let maxDate = null;
+        let commonTimeframes = null;
+        
+        selected.forEach(symbol => {
+            if (symbolData[symbol]) {
+                const data = symbolData[symbol];
+                const symbolMin = new Date(data.minDate);
+                const symbolMax = new Date(data.maxDate);
+                
+                if (!minDate || symbolMin > minDate) minDate = symbolMin;
+                if (!maxDate || symbolMax < maxDate) maxDate = symbolMax;
+                
+                // Intersection of timeframes
+                if (!commonTimeframes) {
+                    commonTimeframes = data.timeframes;
+                } else {
+                    commonTimeframes = commonTimeframes.filter(tf => data.timeframes.includes(tf));
+                }
+            }
+        });
+        
+        if (minDate && maxDate) {
+            // Update date inputs based on selected symbols
+            startTimeInput.value = minDate.toISOString().slice(0, 16);
+            endTimeInput.value = maxDate.toISOString().slice(0, 16);
+            
+            // Show info box
+            dataRangeInfo.style.display = 'block';
+            let info = `<strong>${selected.join(', ')}</strong><br>`;
+            info += `Date Range: ${minDate.toLocaleDateString()} to ${maxDate.toLocaleDateString()}<br>`;
+            if (commonTimeframes && commonTimeframes.length > 0) {
+                info += `Available Timeframes: ${commonTimeframes.join(', ')}`;
+            }
+            dataRangeText.innerHTML = info;
+        }
+    }
+    
+    function updateStrategyInfo() {
+        const selectedStrategy = strategySelect.value;
+        if (!selectedStrategy) {
+            strategyInfo.style.display = 'none';
+            return;
+        }
+        
+        // Show info box with note that strategy auto-configures
+        strategyInfo.style.display = 'block';
+        strategyInfoText.innerHTML = `
+            Strategy will auto-configure:<br>
+            • Timeframe (data granularity)<br>
+            • Evaluation mode (every bar or periodic checks)<br>
+            • Maximum hold time<br>
+            <small style="color: #666;">See strategy description for details.</small>
+        `;
+    }
+    
+    symbolCheckboxes.forEach(cb => {
+        cb.addEventListener('change', updateHints);
+    });
+    
+    if (strategySelect) {
+        strategySelect.addEventListener('change', updateStrategyInfo);
+        updateStrategyInfo(); // Run on load if pre-selected
+    }
+    
+    // Run on page load if symbols are pre-selected
+    updateHints();
+});
+</script>
+
 <div class="card">
     <h2>Important Notes</h2>
     <ul style="margin-left: 1.5rem;">
-        <li>This form creates a backtest definition. To run it, use the management command.</li>
-        <li>Ensure market data is available for the selected symbols and time period.</li>
-        <li>Backtest windows overlap by default (shift < window).</li>
-        <li>Fees apply to both entry and exit (round trip).</li>
+        <li><strong>Auto-Configuration:</strong> Each strategy specifies its preferred timeframe and evaluation mode.</li>
+        <li><strong>Data Requirements:</strong> Ensure market data is ingested at the strategy's required timeframe.</li>
+        <li><strong>Fees:</strong> Trading fees apply to both entry and exit (round trip cost).</li>
+        <li><strong>Slippage:</strong> Additional cost simulating order book depth and execution delays.</li>
     </ul>
 </div>
 {% endblock %}

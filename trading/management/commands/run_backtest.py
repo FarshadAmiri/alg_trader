@@ -4,13 +4,9 @@ Management command to run backtest.
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from datetime import datetime
-from trading.models import Strategy, BacktestRun, TradeResult, StrategyPerformance, Candle
+from trading.models import Strategy, BacktestRun
+from trading.services import execute_backtest_run
 from core_engine.registry import StrategyRegistry
-from core_engine.features.momentum import MomentumFeatures, TrendFeatures
-from core_engine.features.volatility import VolatilityFeatures
-from core_engine.features.liquidity import LiquidityFeatures, CompositeFeatures
-from core_engine.backtest.engine import BacktestEngine
-import pandas as pd
 
 
 class Command(BaseCommand):
@@ -42,37 +38,30 @@ class Command(BaseCommand):
             help='End date (YYYY-MM-DD HH:MM)'
         )
         parser.add_argument(
-            '--window-hours',
-            type=int,
-            default=4,
-            help='Holding window in hours'
-        )
-        parser.add_argument(
-            '--shift-hours',
-            type=int,
-            default=2,
-            help='Window shift in hours'
-        )
-        parser.add_argument(
             '--fee-bps',
             type=int,
             default=10,
-            help='Fee in basis points (10 = 0.10%)'
+            help='Trading fee in basis points (10 = 0.10%%)'
         )
         parser.add_argument(
-            '--timeframe',
-            type=str,
-            default='5m',
-            help='Base timeframe'
+            '--slippage-bps',
+            type=int,
+            default=0,
+            help='Slippage in basis points'
+        )
+        parser.add_argument(
+            '--max-hold-override',
+            type=float,
+            default=None,
+            help='Override strategy max hold hours (advanced)'
         )
 
     def handle(self, *args, **options):
         strategy_name = options['strategy']
         symbols = [s.strip() for s in options['symbols'].split(',')]
-        window_hours = options['window_hours']
-        shift_hours = options['shift_hours']
         fee_bps = options['fee_bps']
-        timeframe = options['timeframe']
+        slippage_bps = options['slippage_bps']
+        max_hold_override = options.get('max_hold_override')
         
         # Parse dates
         try:
@@ -89,10 +78,6 @@ class Command(BaseCommand):
         start_time = timezone.make_aware(start_time) if timezone.is_naive(start_time) else start_time
         end_time = timezone.make_aware(end_time) if timezone.is_naive(end_time) else end_time
         
-        self.stdout.write(f"Running backtest: {strategy_name}")
-        self.stdout.write(f"Period: {start_time} to {end_time}")
-        self.stdout.write(f"Symbols: {', '.join(symbols)}")
-        
         # Load strategy from database
         try:
             strategy_model = Strategy.objects.get(name=strategy_name)
@@ -102,140 +87,64 @@ class Command(BaseCommand):
         if not strategy_model.is_active:
             self.stdout.write(self.style.WARNING(f'Warning: Strategy "{strategy_name}" is not active'))
         
+        # Instantiate strategy to get metadata
+        StrategyClass = StrategyRegistry.load_from_path(strategy_model.module_path)
+        strategy_instance = StrategyClass(parameters=strategy_model.parameters)
+        
+        # Display strategy info
+        self.stdout.write(f"\n{'='*60}")
+        self.stdout.write(f"Strategy: {strategy_name}")
+        self.stdout.write(f"  Preferred timeframe: {strategy_instance.preferred_timeframe}")
+        self.stdout.write(f"  Evaluation mode: {strategy_instance.evaluation_mode}")
+        if strategy_instance.evaluation_mode == 'periodic':
+            self.stdout.write(f"  Check interval: every {strategy_instance.evaluation_interval_hours}h")
+        else:
+            self.stdout.write(f"  Check interval: every candle")
+        self.stdout.write(f"  Typical hold: {strategy_instance.typical_hold_range}")
+        self.stdout.write(f"  Max hold: {max_hold_override or strategy_instance.max_hold_hours}h")
+        self.stdout.write(f"{'='*60}\n")
+        
+        self.stdout.write(f"Period: {start_time} to {end_time}")
+        self.stdout.write(f"Symbols: {', '.join(symbols)}")
+        self.stdout.write(f"Fees: {fee_bps} bps, Slippage: {slippage_bps} bps\n")
+        
+        # Get required timeframe from strategy
+        required_timeframe = strategy_instance.preferred_timeframe
+        
         # Create backtest run record
         backtest_run = BacktestRun.objects.create(
             strategy=strategy_model,
             symbol_universe=symbols,
             start_time=start_time,
             end_time=end_time,
-            base_timeframe=timeframe,
-            window_hours=window_hours,
-            shift_hours=shift_hours,
+            base_timeframe=required_timeframe,
+            window_hours=max_hold_override or strategy_instance.max_hold_hours,
+            shift_hours=strategy_instance.evaluation_interval_hours if strategy_instance.evaluation_mode == 'periodic' else 0.1,
             fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
             status='running'
         )
         
         try:
-            # Load candles from database
+            # Execute using shared service (same as web UI)
             self.stdout.write("Loading market data...")
-            candles_by_symbol = {}
-            
-            for symbol in symbols:
-                candles = Candle.objects.filter(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                ).order_by('timestamp')
-                
-                if not candles.exists():
-                    self.stdout.write(
-                        self.style.WARNING(f"No data found for {symbol}")
-                    )
-                    continue
-                
-                # Convert to DataFrame
-                data = list(candles.values('timestamp', 'open', 'high', 'low', 'close', 'volume'))
-                df = pd.DataFrame(data)
-                candles_by_symbol[symbol] = df
-                
-                self.stdout.write(f"  {symbol}: {len(df)} candles")
-            
-            if not candles_by_symbol:
-                raise CommandError("No data available for any symbol")
-            
-            # Compute features
             self.stdout.write("Computing features...")
-            features_by_symbol = {}
-            
-            momentum = MomentumFeatures()
-            volatility = VolatilityFeatures()
-            liquidity = LiquidityFeatures()
-            composite = CompositeFeatures()
-            
-            for symbol, df in candles_by_symbol.items():
-                try:
-                    # Compute all features
-                    df = momentum.compute(df)
-                    df = volatility.compute(df)
-                    df = liquidity.compute(df)
-                    df = composite.compute(df)
-                    
-                    features_by_symbol[symbol] = df
-                    self.stdout.write(f"  {symbol}: {len(df.columns)} features")
-                    
-                except Exception as e:
-                    self.stdout.write(
-                        self.style.WARNING(f"  Error computing features for {symbol}: {e}")
-                    )
-            
-            # Load strategy class
             self.stdout.write("Initializing strategy...")
-            try:
-                StrategyClass = StrategyRegistry.load_from_path(strategy_model.module_path)
-                strategy_instance = StrategyClass(parameters=strategy_model.parameters)
-                self.stdout.write(f"  Strategy: {strategy_instance.name}")
-            except Exception as e:
-                raise CommandError(f"Failed to load strategy: {e}")
-            
-            # Run backtest
+            self.stdout.write(f"  Strategy: {strategy_instance.name}")
             self.stdout.write("Running backtest...")
-            engine = BacktestEngine(
-                window_hours=window_hours,
-                shift_hours=shift_hours,
-                fee_bps=fee_bps
-            )
             
-            result = engine.run(
-                strategy_instance,
-                features_by_symbol,
-                start_time,
-                end_time
-            )
-            
-            # Save results
-            self.stdout.write("Saving results...")
-            
-            for trade in result['trades']:
-                TradeResult.objects.create(
-                    backtest=backtest_run,
-                    symbol=trade.symbol,
-                    entry_time=trade.entry_time,
-                    exit_time=trade.exit_time,
-                    direction=trade.direction,
-                    return_pct=trade.return_pct,
-                    max_drawdown=trade.max_drawdown,
-                    metadata=trade.metadata
-                )
-            
-            # Save performance metrics
-            metrics = result['metrics']
-            StrategyPerformance.objects.create(
-                backtest=backtest_run,
-                total_trades=metrics['total_trades'],
-                winning_trades=metrics['winning_trades'],
-                losing_trades=metrics['losing_trades'],
-                win_rate=metrics['win_rate'],
-                avg_return_pct=metrics['avg_return_pct'],
-                median_return_pct=metrics['median_return_pct'],
-                profit_factor=metrics['profit_factor'],
-                max_drawdown=metrics['max_drawdown'],
-                total_return_pct=metrics['total_return_pct']
-            )
-            
-            # Update backtest status
-            backtest_run.status = 'completed'
-            backtest_run.save()
+            result = execute_backtest_run(backtest_run)
             
             # Display results
+            metrics = result.get('metrics', {})
             self.stdout.write(self.style.SUCCESS("\n=== Backtest Results ==="))
-            self.stdout.write(f"Total Trades: {metrics['total_trades']}")
-            self.stdout.write(f"Win Rate: {metrics['win_rate']:.2f}%")
-            self.stdout.write(f"Avg Return: {metrics['avg_return_pct']:.2f}%")
-            self.stdout.write(f"Total Return: {metrics['total_return_pct']:.2f}%")
-            self.stdout.write(f"Max Drawdown: {metrics['max_drawdown']:.2f}%")
-            if metrics['profit_factor']:
-                self.stdout.write(f"Profit Factor: {metrics['profit_factor']:.2f}")
+            self.stdout.write(f"Total Trades: {metrics.get('total_trades', 0)}")
+            self.stdout.write(f"Win Rate: {metrics.get('win_rate', 0):.2f}%")
+            self.stdout.write(f"Avg Return: {metrics.get('avg_return_pct', 0):.2f}%")
+            self.stdout.write(f"Total Return: {metrics.get('total_return_pct', 0):.2f}%")
+            self.stdout.write(f"Max Drawdown: {metrics.get('max_drawdown', 0):.2f}%")
+            if metrics.get('profit_factor'):
+                self.stdout.write(f"Profit Factor: {metrics.get('profit_factor'):.2f}")
             
             self.stdout.write(self.style.SUCCESS(f"\nBacktest #{backtest_run.id} completed successfully"))
             

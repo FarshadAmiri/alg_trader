@@ -59,14 +59,35 @@ class BacktestRun(models.Model):
     symbol_universe = models.JSONField(help_text="List of symbols to evaluate")
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    base_timeframe = models.CharField(max_length=5, default="5m")
-    window_hours = models.IntegerField(default=4)
-    shift_hours = models.IntegerField(default=2)
+    
+    # Auto-populated from strategy metadata (kept for database records)
+    base_timeframe = models.CharField(
+        max_length=5, 
+        default="5m",
+        help_text="Auto-populated from strategy.preferred_timeframe"
+    )
+    window_hours = models.FloatField(
+        default=4,
+        help_text="Auto-populated from strategy.max_hold_hours"
+    )
+    shift_hours = models.FloatField(
+        default=2,
+        help_text="Auto-populated from strategy.evaluation_interval_hours"
+    )
+    
+    # User-configurable parameters
+    max_hold_override = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Optional: Override strategy's default max hold time (hours)"
+    )
     fee_bps = models.IntegerField(
         default=10,
         help_text="Fee in basis points (10 = 0.10%)"
     )
     slippage_bps = models.IntegerField(default=0)
+    
+    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=20,

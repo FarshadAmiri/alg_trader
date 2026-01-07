@@ -13,7 +13,7 @@ class Command(BaseCommand):
             {
                 'name': 'MACD RSI Confluence',
                 'module_path': 'core_engine.strategies.macd_rsi_confluence:MACDRSIStrategy',
-                'description': 'Baseline strategy using MACD histogram and RSI with volatility and volume filters. Ranks symbols by combined momentum score.',
+                'description': 'Baseline strategy using MACD histogram and RSI with volatility and volume filters. Works on 1h candles, checks every 2h, typical 4-8h holds.',
                 'parameters': {
                     'rsi_min': 40,
                     'rsi_max': 65,
@@ -27,12 +27,29 @@ class Command(BaseCommand):
             {
                 'name': 'Momentum Rank',
                 'module_path': 'core_engine.strategies.momentum_rank:MomentumRankStrategy',
-                'description': 'Ranks symbols by multi-timeframe momentum score with volume confirmation and volatility control.',
+                'description': 'Multi-timeframe momentum ranking strategy. Works on 15m candles, checks every hour, typical 2-6h holds.',
                 'parameters': {
                     'min_momentum_score': 0.2,
                     'atr_pct_max': 6.0,
                     'volume_min_zscore': -0.5,
                     'max_positions': 3
+                },
+                'is_active': True
+            },
+            {
+                'name': 'Bollinger Mean Reversion',
+                'module_path': 'core_engine.strategies.bollinger_mean_reversion:BollingerMeanReversionStrategy',
+                'description': 'Short-term mean reversion using Bollinger Bands. Requires 5m candles, checks every bar, typical 1-3h holds. High-frequency entries on oversold bounces.',
+                'parameters': {
+                    'bb_period': 20,
+                    'bb_std': 2.0,
+                    'rsi_oversold': 30,
+                    'volume_spike_min': 1.2,
+                    'atr_pct_max': 4.0,
+                    'rsi_overbought': 70,
+                    'stop_loss_pct': 1.5,
+                    'max_hold_hours': 4,
+                    'max_positions': 2
                 },
                 'is_active': True
             }

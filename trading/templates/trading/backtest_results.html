@@ -9,8 +9,18 @@
     <p><strong>Status:</strong> <span class="status-{{ backtest.status }}">{{ backtest.get_status_display }}</span></p>
     <p><strong>Period:</strong> {{ backtest.start_time|date:"Y-m-d H:i" }} to {{ backtest.end_time|date:"Y-m-d H:i" }}</p>
     <p><strong>Symbols:</strong> {{ backtest.symbol_universe|join:", " }}</p>
-    <p><strong>Window:</strong> {{ backtest.window_hours }}h (shift: {{ backtest.shift_hours }}h)</p>
-    <p><strong>Fees:</strong> {{ backtest.fee_bps }} bps</p>
+    <p><strong>Timeframe:</strong> {{ backtest.base_timeframe }}</p>
+    <p><strong>Max Hold:</strong> {{ backtest.window_hours }}h 
+        {% if backtest.shift_hours < 0.5 %}
+        (checks every bar)
+        {% else %}
+        (checks every {{ backtest.shift_hours }}h)
+        {% endif %}
+    </p>
+    <p><strong>Fees:</strong> {{ backtest.fee_bps }} bps ({{ backtest.fee_bps|floatformat:2|add:"0"|floatformat:2 }}% per side)</p>
+    {% if backtest.slippage_bps > 0 %}
+    <p><strong>Slippage:</strong> {{ backtest.slippage_bps }} bps</p>
+    {% endif %}
     
     {% if backtest.status == 'failed' %}
     <div style="background: #f8d7da; padding: 1rem; border-radius: 4px; margin-top: 1rem;">

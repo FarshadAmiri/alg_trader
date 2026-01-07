@@ -16,6 +16,16 @@
             <div class="metric-value">{{ total_backtests }}</div>
             <div class="metric-label">Total Backtests</div>
         </div>
+        
+        <div class="metric">
+            <div class="metric-value">{{ symbols_count|default:0 }}</div>
+            <div class="metric-label">Symbols</div>
+        </div>
+        
+        <div class="metric">
+            <div class="metric-value">{{ total_candles|default:0 }}</div>
+            <div class="metric-label">Candles</div>
+        </div>
     </div>
 </div>
 
@@ -58,17 +68,15 @@
     <h2>Quick Start</h2>
     
     <h3>1. Ingest Market Data</h3>
-    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto;">
-python manage.py ingest_market_data --symbols "BTCUSDT,ETHUSDT" --start-date 30 --provider ccxt --exchange binance
-    </pre>
+    <p>Use the web interface to fetch historical market data from exchanges.</p>
+    <p style="margin-top: 0.5rem;">
+        <a href="{% url 'trading:ingest_data' %}" class="btn btn-success">📥 Ingest Market Data</a>
+        <a href="{% url 'trading:manage_data' %}" class="btn">🗂️ Manage Data</a>
+    </p>
     
-    <h3>2. Run a Backtest (via Django Admin or Command)</h3>
-    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto;">
-python manage.py run_backtest --strategy "MACD RSI Confluence" --symbols "BTCUSDT,ETHUSDT" \
-    --start-date "2025-01-01 00:00" --end-date "2025-01-15 00:00"
-    </pre>
-    
-    <p style="margin-top: 1rem;">
+    <h3 style="margin-top: 1.5rem;">2. Run a Backtest</h3>
+    <p>Create and run backtests using your ingested data and available strategies.</p>
+    <p style="margin-top: 0.5rem;">
         <a href="{% url 'trading:strategy_list' %}" class="btn">View Strategies</a>
         <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Create Backtest</a>
     </p>

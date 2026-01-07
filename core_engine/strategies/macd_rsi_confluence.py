@@ -23,6 +23,13 @@ class MACDRSIStrategy(TradingStrategy):
     
     name = "macd_rsi_confluence"
     
+    # Strategy metadata
+    preferred_timeframe = "1h"              # Works well on 1-hour candles
+    evaluation_mode = "periodic"            # Check periodically, not every bar
+    evaluation_interval_hours = 2.0         # Check every 2 hours
+    max_hold_hours = 8.0                    # Maximum 8 hour hold
+    typical_hold_range = "4-8 hours"        # Typical hold duration
+    
     def __init__(self, parameters: Dict = None):
         default_params = {
             'rsi_min': 40,
@@ -94,26 +101,91 @@ class MACDRSIStrategy(TradingStrategy):
         
         # Check required columns exist
         required = ['rsi', 'macd_histogram', 'atr_pct', 'volume_ratio']
-        if not all(col in row.index for col in required):
+        missing = [col for col in required if col not in row.index]
+        if missing:
+            print(f"[DEBUG] Missing columns: {missing}")
+            return False
+        
+        # Check for NaN values
+        nan_fields = [col for col in required if pd.isna(row[col])]
+        if nan_fields:
+            print(f"[DEBUG] NaN values in: {nan_fields}")
             return False
         
         # RSI filter
         if row['rsi'] < self.parameters['rsi_min'] or row['rsi'] > self.parameters['rsi_max']:
+            print(f"[DEBUG] RSI filter failed: {row['rsi']} not in [{self.parameters['rsi_min']}, {self.parameters['rsi_max']}]")
             return False
         
         # MACD filter
         if row['macd_histogram'] < self.parameters['macd_hist_min']:
+            print(f"[DEBUG] MACD filter failed: {row['macd_histogram']} < {self.parameters['macd_hist_min']}")
             return False
         
         # Volatility filter
         if row['atr_pct'] > self.parameters['atr_pct_max']:
+            print(f"[DEBUG] ATR filter failed: {row['atr_pct']} > {self.parameters['atr_pct_max']}")
             return False
         
         # Volume filter
         if row['volume_ratio'] < self.parameters['volume_min_ratio']:
+            print(f"[DEBUG] Volume filter failed: {row['volume_ratio']} < {self.parameters['volume_min_ratio']}")
             return False
         
+        print(f"[DEBUG] All filters passed! RSI={row['rsi']:.1f}, MACD={row['macd_histogram']:.4f}, ATR%={row['atr_pct']:.2f}, Vol={row['volume_ratio']:.2f}")
         return True
+    
+    def should_close_position(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        entry_time: datetime,
+        current_time: datetime,
+        entry_price: float,
+        current_price: float
+    ) -> bool:
+        """
+        Exit conditions for MACD-RSI strategy.
+        
+        Close position when:
+        1. RSI becomes overbought (>75) - take profits
+        2. MACD histogram turns negative - momentum reversal
+        3. Stop loss: down >3% from entry
+        4. Take profit: up >6% from entry
+        5. Maximum hold time: 8 hours (fallback safety)
+        """
+        latest = self.get_latest_features(features, current_time)
+        
+        if latest is None:
+            # No data available - close position for safety
+            return True
+        
+        # Calculate current P&L
+        pnl_pct = ((current_price - entry_price) / entry_price) * 100
+        
+        # Stop loss: -3%
+        if pnl_pct < -3.0:
+            return True
+        
+        # Take profit: +6%
+        if pnl_pct > 6.0:
+            return True
+        
+        # RSI overbought exit (take profits when momentum exhausted)
+        if 'rsi' in latest.index and latest['rsi'] > 75:
+            return True
+        
+        # MACD momentum reversal
+        if 'macd_histogram' in latest.index and latest['macd_histogram'] < 0:
+            return True
+        
+        # Maximum holding time: 8 hours (short-term trading)
+        time_held = (current_time - entry_time).total_seconds() / 3600
+        if time_held >= 8.0:
+            return True
+        
+        # Continue holding
+        return False
     
     def _calculate_score(self, row: pd.Series) -> float:
         """

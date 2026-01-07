@@ -1,0 +1,243 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Manage Data - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Manage Ingested Data</h2>
+        <button onclick="openIngestModal()" class="btn btn-success">📥 Ingest New Data</button>
+    </div>
+    
+    <p><strong>Total Candles:</strong> {{ total_candles|default:0 }}</p>
+    
+    {% if data_summary %}
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Timeframe</th>
+                <th>Candles</th>
+                <th>Date Range</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for data in data_summary %}
+            <tr>
+                <td><strong>{{ data.symbol }}</strong></td>
+                <td><code style="background: #e3f2fd; padding: 0.2rem 0.5rem; border-radius: 3px;">{{ data.timeframe }}</code></td>
+                <td>{{ data.count }}</td>
+                <td>{{ data.min_date|date:"Y-m-d H:i" }} to {{ data.max_date|date:"Y-m-d H:i" }}</td>
+                <td>
+                    <form method="post" action="{% url 'trading:delete_data' %}" style="display: inline;" onsubmit="return confirm('Delete {{ data.count }} candles for {{ data.symbol }} ({{ data.timeframe }})?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="symbol" value="{{ data.symbol }}">
+                        <input type="hidden" name="timeframe" value="{{ data.timeframe }}">
+                        <button type="submit" class="btn" style="background: #e74c3c; color: white; padding: 0.3rem 0.8rem; font-size: 0.9rem;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="background: #fff3cd; padding: 1rem; border-radius: 4px; margin-top: 1rem;">
+        <strong>⚠️ No data found!</strong> Click the "Ingest New Data" button above to get started.
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Tips</h2>
+    <ul style="margin-left: 1.5rem;">
+        <li>Delete old data to free up database space</li>
+        <li>Keep data for timeframes required by your strategies (5m, 1h, 15m)</li>
+        <li>Deleting data doesn't affect backtest results (they're stored separately)</li>
+        <li>You can re-ingest data anytime</li>
+    </ul>
+</div>
+
+<!-- Ingest Data Modal -->
+<div id="ingestModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Ingest Market Data</h2>
+            <button class="close" onclick="closeIngestModal()">&times;</button>
+        </div>
+        
+        <form id="ingestForm" method="post" action="{% url 'trading:ingest_data_ajax' %}">
+            {% csrf_token %}
+            
+            {{ form.non_field_errors }}
+            
+            {% for field in form %}
+            <div class="form-group">
+                {{ field.label_tag }}
+                {{ field }}
+                {% if field.help_text %}
+                    <small>{{ field.help_text }}</small>
+                {% endif %}
+                {{ field.errors }}
+            </div>
+            {% endfor %}
+            
+            <button type="submit" class="btn btn-primary" id="ingestButton">Start Ingestion</button>
+            <button type="button" class="btn" onclick="closeIngestModal()">Cancel</button>
+        </form>
+        
+        <!-- Progress Bar -->
+        <div id="progressContainer" class="progress-container">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill">0%</div>
+            </div>
+            <div id="progressText" class="progress-text">
+                <span class="spinner"></span>
+                <span id="progressMessage">Initializing...</span>
+            </div>
+        </div>
+        
+        <!-- Results -->
+        <div id="resultsContainer" style="margin-top: 1rem; display: none;">
+            <h3>Results</h3>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openIngestModal() {
+    document.getElementById('ingestModal').style.display = 'block';
+}
+
+function closeIngestModal() {
+    document.getElementById('ingestModal').style.display = 'none';
+    document.getElementById('progressContainer').style.display = 'none';
+    document.getElementById('resultsContainer').style.display = 'none';
+    document.getElementById('ingestForm').reset();
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('ingestModal');
+    if (event.target == modal) {
+        closeIngestModal();
+    }
+}
+
+// Handle form submission with AJAX
+document.getElementById('ingestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    const ingestButton = document.getElementById('ingestButton');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressMessage = document.getElementById('progressMessage');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const resultsContent = document.getElementById('resultsContent');
+    
+    // Disable button and show progress
+    ingestButton.disabled = true;
+    progressContainer.style.display = 'block';
+    resultsContainer.style.display = 'none';
+    progressFill.style.width = '0%';
+    progressFill.textContent = '0%';
+    progressMessage.textContent = 'Starting ingestion...';
+    
+    try {
+        const response = await fetch(form.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = JSON.parse(line.substring(6));
+                    
+                    if (data.progress !== undefined) {
+                        const percent = Math.round(data.progress);
+                        progressFill.style.width = percent + '%';
+                        progressFill.textContent = percent + '%';
+                    }
+                    
+                    if (data.message) {
+                        progressMessage.textContent = data.message;
+                    }
+                    
+                    if (data.complete) {
+                        // Show results briefly then auto-reload
+                        progressContainer.style.display = 'none';
+                        resultsContainer.style.display = 'block';
+                        
+                        let resultsHTML = '<div style="background: #d4edda; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">';
+                        resultsHTML += `<strong>✓ Success!</strong> ${data.summary}`;
+                        resultsHTML += '</div>';
+                        
+                        if (data.results && data.results.length > 0) {
+                            resultsHTML += '<table style="width: 100%; margin-top: 1rem;"><thead><tr><th>Symbol</th><th>Created</th><th>Updated</th><th>Status</th></tr></thead><tbody>';
+                            data.results.forEach(r => {
+                                const status = r.success ? '✓' : '✗';
+                                const rowClass = r.success ? 'positive' : 'negative';
+                                resultsHTML += `<tr><td><strong>${r.symbol}</strong></td><td>${r.created || 0}</td><td>${r.updated || 0}</td><td class="${rowClass}">${status}</td></tr>`;
+                            });
+                            resultsHTML += '</tbody></table>';
+                        }
+                        
+                        if (data.errors && data.errors.length > 0) {
+                            resultsHTML += '<div style="background: #fff3cd; padding: 1rem; border-radius: 4px; margin-top: 1rem;"><strong>Warnings:</strong><ul>';
+                            data.errors.forEach(err => {
+                                resultsHTML += `<li>${err}</li>`;
+                            });
+                            resultsHTML += '</ul></div>';
+                        }
+                        
+                        resultsHTML += '<p style="margin-top: 1rem; text-align: center; color: #666;">Page will refresh automatically in <span id="countdown">3</span> seconds...</p>';
+                        resultsContent.innerHTML = resultsHTML;
+                        
+                        ingestButton.disabled = false;
+                        
+                        // Auto-reload after 3 seconds with countdown
+                        let countdown = 3;
+                        const countdownElement = document.getElementById('countdown');
+                        const countdownInterval = setInterval(() => {
+                            countdown--;
+                            if (countdownElement) {
+                                countdownElement.textContent = countdown;
+                            }
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                                location.reload();
+                            }
+                        }, 1000);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        progressContainer.style.display = 'none';
+        resultsContainer.style.display = 'block';
+        resultsContent.innerHTML = `<div style="background: #f8d7da; padding: 1rem; border-radius: 4px;">
+            <strong>Error:</strong> ${error.message}
+        </div>`;
+        ingestButton.disabled = false;
+    }
+});
+</script>
+{% endblock %}

@@ -12,6 +12,13 @@ class TradingStrategy(ABC):
     
     name: str = "base_strategy"
     
+    # Strategy metadata (define in subclasses)
+    preferred_timeframe: str = "5m"              # Optimal candle timeframe
+    evaluation_mode: str = "periodic"            # "every_bar" or "periodic"
+    evaluation_interval_hours: float = 2.0       # If periodic, check every N hours
+    max_hold_hours: float = 4.0                  # Maximum position hold time
+    typical_hold_range: str = "1-4 hours"        # Human-readable typical hold
+    
     def __init__(self, parameters: Optional[Dict] = None):
         """
         Initialize strategy with parameters.
@@ -56,6 +63,38 @@ class TradingStrategy(ABC):
         
         Returns:
             "LONG", "SHORT", or "FLAT"
+        """
+        pass
+    
+    @abstractmethod
+    def should_close_position(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        entry_time: datetime,
+        current_time: datetime,
+        entry_price: float,
+        current_price: float
+    ) -> bool:
+        """
+        Determine if an open position should be closed.
+        
+        This allows each strategy to define its own exit logic based on:
+        - Technical indicators (e.g., RSI overbought, MACD crossover)
+        - Profit targets or stop losses
+        - Time-based exits (if desired)
+        - Market conditions
+        
+        Args:
+            symbol: Symbol of the open position
+            features: DataFrame with computed features
+            entry_time: When the position was entered
+            current_time: Current evaluation timestamp
+            entry_price: Price at entry
+            current_price: Current market price
+        
+        Returns:
+            True if position should be closed, False otherwise
         """
         pass
     

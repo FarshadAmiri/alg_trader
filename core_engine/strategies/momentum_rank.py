@@ -20,6 +20,13 @@ class MomentumRankStrategy(TradingStrategy):
     
     name = "momentum_rank"
     
+    # Strategy metadata
+    preferred_timeframe = "15m"             # Works on 15-minute candles
+    evaluation_mode = "periodic"            # Check periodically
+    evaluation_interval_hours = 1.0         # Check every hour
+    max_hold_hours = 6.0                    # Maximum 6 hour hold
+    typical_hold_range = "2-6 hours"        # Typical hold duration
+    
     def __init__(self, parameters: Dict = None):
         default_params = {
             'min_momentum_score': 0.2,
@@ -97,6 +104,61 @@ class MomentumRankStrategy(TradingStrategy):
                 return False
         
         return True
+    
+    def should_close_position(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        entry_time: datetime,
+        current_time: datetime,
+        entry_price: float,
+        current_price: float
+    ) -> bool:
+        """
+        Exit conditions for momentum rank strategy.
+        
+        Close position when:
+        1. Momentum score drops below threshold - trend weakening
+        2. Volume dries up (z-score < -1) - low conviction
+        3. Stop loss: down >2.5% from entry
+        4. Take profit: up >5% from entry
+        5. Maximum hold time: 6 hours (momentum trades are faster)
+        """
+        latest = self.get_latest_features(features, current_time)
+        
+        if latest is None:
+            return True
+        
+        # Calculate current P&L
+        pnl_pct = ((current_price - entry_price) / entry_price) * 100
+        
+        # Tighter stop loss for momentum strategy: -2.5%
+        if pnl_pct < -2.5:
+            return True
+        
+        # Take profit: +5%
+        if pnl_pct > 5.0:
+            return True
+        
+        # Momentum deterioration - exit if score drops significantly
+        current_score = self._calculate_momentum_score(latest)
+        if current_score < 0.1:  # Much weaker than entry requirement
+            return True
+        
+        # Volume dries up - low conviction
+        if 'volume_zscore' in latest.index and latest['volume_zscore'] < -1.0:
+            return True
+        
+        # Volatility spike - risk management
+        if 'atr_pct' in latest.index and latest['atr_pct'] > self.parameters['atr_pct_max'] * 1.5:
+            return True
+        
+        # Maximum holding time: 6 hours (momentum strategies act faster)
+        time_held = (current_time - entry_time).total_seconds() / 3600
+        if time_held >= 6.0:
+            return True
+        
+        return False
     
     def _calculate_momentum_score(self, row: pd.Series) -> float:
         """

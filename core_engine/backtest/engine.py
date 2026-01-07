@@ -20,7 +20,7 @@ class BacktestEngine:
         fee_bps: int = 10,
         slippage_bps: int = 0
     ):
-        """Initialize backtest engine."""
+        """Initialize backtest engine (legacy interface)."""
         self.walk_forward = WalkForwardEngine(
             window_hours=window_hours,
             shift_hours=shift_hours,
@@ -28,6 +28,47 @@ class BacktestEngine:
             slippage_bps=slippage_bps
         )
         self.metrics_calculator = PerformanceMetrics()
+    
+    @classmethod
+    def from_strategy(
+        cls,
+        strategy,
+        fee_bps: int = 10,
+        slippage_bps: int = 0,
+        max_hold_override: float = None
+    ):
+        """
+        Create backtest engine auto-configured from strategy metadata.
+        
+        This is the new simplified interface - it reads the strategy's
+        preferred evaluation mode and timeframe settings automatically.
+        
+        Args:
+            strategy: TradingStrategy instance with metadata
+            fee_bps: Trading fee in basis points
+            slippage_bps: Slippage in basis points
+            max_hold_override: Optional override for max_hold_hours
+        
+        Returns:
+            BacktestEngine configured for the strategy
+        """
+        # Get strategy metadata
+        max_hold = max_hold_override or getattr(strategy, 'max_hold_hours', 4.0)
+        
+        # Determine shift hours based on evaluation mode
+        if getattr(strategy, 'evaluation_mode', 'periodic') == 'every_bar':
+            # For every_bar mode, use small shift to trigger bar-by-bar
+            shift_hours = 0.1
+        else:
+            # Use strategy's preferred evaluation interval
+            shift_hours = getattr(strategy, 'evaluation_interval_hours', 2.0)
+        
+        return cls(
+            window_hours=int(max_hold),
+            shift_hours=shift_hours,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps
+        )
     
     def run(
         self,

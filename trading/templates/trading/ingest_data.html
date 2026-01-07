@@ -1,0 +1,194 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Ingest Market Data - Algo Trader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Ingest Market Data</h2>
+    
+    <div style="background: #e3f2fd; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
+        <strong>📊 Database Status:</strong>
+        {{ total_candles|default:0 }} candles across {{ symbols_count|default:0 }} symbols
+    </div>
+    
+    <div style="background: #fff3cd; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem; border-left: 4px solid #ffc107;">
+        <strong>💡 Network Issues?</strong> If you're behind a firewall/proxy or getting connection errors,
+        select <strong>"Mock Data (for testing)"</strong> as the provider to generate sample data for testing the system.
+    </div>
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <div style="background: #ffebee; color: #c62828; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+        
+        <div class="form-group">
+            <label>{{ form.symbol_selection.label }}</label>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; border-radius: 4px; background: #fafafa;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem;">
+                    {% for value, label in form.symbol_selection.field.choices %}
+                    <label style="display: flex; align-items: center; cursor: pointer; padding: 0.25rem;">
+                        <input type="checkbox" name="symbol_selection" value="{{ value }}" 
+                               {% if value in form.symbol_selection.value %}checked{% endif %}
+                               style="margin-right: 0.5rem;">
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if form.symbol_selection.help_text %}
+            <small style="color: #666;">{{ form.symbol_selection.help_text }}</small>
+            {% endif %}
+            {% if form.symbol_selection.errors %}
+            <div style="color: #c62828; margin-top: 0.25rem;">{{ form.symbol_selection.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <div class="form-group">
+            <label for="{{ form.custom_symbols.id_for_label }}">{{ form.custom_symbols.label }}</label>
+            {{ form.custom_symbols }}
+            {% if form.custom_symbols.help_text %}
+            <small style="color: #666;">{{ form.custom_symbols.help_text }}</small>
+            {% endif %}
+            {% if form.custom_symbols.errors %}
+            <div style="color: #c62828; margin-top: 0.25rem;">{{ form.custom_symbols.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="{{ form.timeframe.id_for_label }}">{{ form.timeframe.label }}</label>
+                {{ form.timeframe }}
+                {% if form.timeframe.errors %}
+                <div style="color: #c62828; margin-top: 0.25rem;">{{ form.timeframe.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="form-group">
+                <label for="{{ form.days_back.id_for_label }}">{{ form.days_back.label }}</label>
+                {{ form.days_back }}
+                {% if form.days_back.help_text %}
+                <small style="color: #666;">{{ form.days_back.help_text }}</small>
+                {% endif %}
+                {% if form.days_back.errors %}
+                <div style="color: #c62828; margin-top: 0.25rem;">{{ form.days_back.errors }}</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="{{ form.provider.id_for_label }}">{{ form.provider.label }}</label>
+                {{ form.provider }}
+                {% if form.provider.errors %}
+                <div style="color: #c62828; margin-top: 0.25rem;">{{ form.provider.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="form-group">
+                <label for="{{ form.exchange.id_for_label }}">{{ form.exchange.label }}</label>
+                {{ form.exchange }}
+                {% if form.exchange.help_text %}
+                <small style="color: #666;">{{ form.exchange.help_text }}</small>
+                {% endif %}
+                {% if form.exchange.errors %}
+                <div style="color: #c62828; margin-top: 0.25rem;">{{ form.exchange.errors }}</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div style="margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-success" style="margin-right: 0.5rem;">
+                📥 Ingest Data
+            </button>
+            <a href="{% url 'trading:index' %}" class="btn">Cancel</a>
+        </div>
+    </form>
+</div>
+
+{% if results %}
+<div class="card">
+    <h2>Ingestion Results</h2>
+    
+    <div style="background: #e8f5e9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <strong>✓ Total:</strong> {{ total_created }} candles created, {{ total_updated }} updated
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in results %}
+            <tr>
+                <td><strong>{{ result.symbol }}</strong></td>
+                <td>
+                    {% if result.success %}
+                    <span style="color: #2e7d32;">✓ Success</span>
+                    {% else %}
+                    <span style="color: #c62828;">✗ Failed</span>
+                    {% endif %}
+                </td>
+                <td>{{ result.created|default:"-" }}</td>
+                <td>{{ result.updated|default:"-" }}</td>
+                <td>
+                    {% if result.error %}
+                    <span style="color: #c62828; font-size: 0.875rem;">{{ result.error }}</span>
+                    {% else %}
+                    <span style="color: #666; font-size: 0.875rem;">OK</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div style="margin-top: 1rem;">
+        <a href="{% url 'trading:backtest_run' %}" class="btn btn-success">Run Backtest</a>
+        <a href="{% url 'trading:ingest_data' %}" class="btn">Ingest More Data</a>
+    </div>
+</div>
+{% endif %}
+
+<style>
+    .form-group {
+        margin-bottom: 1rem;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.875rem;
+    }
+    
+    .form-group textarea {
+        resize: vertical;
+    }
+    
+    .form-group small {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 0.8125rem;
+    }
+</style>
+{% endblock %}

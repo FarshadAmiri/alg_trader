@@ -11,8 +11,8 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Timeframe</th>
                 <th>Description</th>
-                <th>Module Path</th>
                 <th>Backtests</th>
                 <th>Active</th>
                 <th>Created</th>
@@ -22,8 +22,10 @@
             {% for strategy in strategies %}
             <tr>
                 <td><strong>{{ strategy.name }}</strong></td>
-                <td>{{ strategy.description|truncatewords:20 }}</td>
-                <td><code style="font-size: 0.85rem;">{{ strategy.module_path }}</code></td>
+                <td>
+                    <code style="background: #e3f2fd; padding: 0.2rem 0.5rem; border-radius: 3px; font-weight: 600; color: #1976d2;">{{ strategy.timeframe }}</code>
+                </td>
+                <td>{{ strategy.description|truncatewords:15 }}</td>
                 <td>{{ strategy.backtest_count }}</td>
                 <td>
                     {% if strategy.is_active %}
@@ -50,12 +52,25 @@
 <div class="card">
     <h2>Available Built-in Strategies</h2>
     
+    <p style="background: #e3f2fd; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        💡 <strong>Strategy Auto-Configuration:</strong> Each strategy defines its own timeframe requirements, 
+        evaluation mode (every bar or periodic), and hold times. The backtest system automatically configures 
+        itself based on the strategy's preferences.
+    </p>
+    
     <h3>1. MACD RSI Confluence</h3>
     <p><strong>Module:</strong> <code>core_engine.strategies.macd_rsi_confluence:MACDRSIStrategy</code></p>
+    <p><strong>Timeframe:</strong> 1h | <strong>Evaluation:</strong> Every 2 hours | <strong>Hold:</strong> 4-8h typical</p>
     <p>Baseline strategy using MACD and RSI with volatility and volume filters.</p>
     
     <h3>2. Momentum Rank</h3>
     <p><strong>Module:</strong> <code>core_engine.strategies.momentum_rank:MomentumRankStrategy</code></p>
+    <p><strong>Timeframe:</strong> 15m | <strong>Evaluation:</strong> Every hour | <strong>Hold:</strong> 3-6h typical</p>
     <p>Ranks symbols by multi-timeframe momentum score.</p>
+    
+    <h3>3. Bollinger Mean Reversion</h3>
+    <p><strong>Module:</strong> <code>core_engine.strategies.bollinger_mean_reversion:BollingerMeanReversionStrategy</code></p>
+    <p><strong>Timeframe:</strong> 5m | <strong>Evaluation:</strong> Every bar | <strong>Hold:</strong> 30m-4h typical</p>
+    <p>High-frequency mean reversion strategy using Bollinger Bands, RSI, and volume spikes.</p>
 </div>
 {% endblock %}

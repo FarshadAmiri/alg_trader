@@ -1,7 +1,9 @@
 ---
-# Systematic Crypto Trading Research Platform (4h Horizon)
+# Systematic Crypto Trading Research Platform (Short-Term, Low-Risk)
 
-**Purpose:** A research + evaluation platform that ranks crypto symbols for short-term opportunities (4-hour horizon) using features/indicators and rule-based trading strategies (“agents”), then evaluates them with strict walk-forward backtests.
+**Purpose:** A research + evaluation platform that ranks crypto symbols for short-term, low-risk trading opportunities using features/indicators and rule-based trading strategies ("agents"), then evaluates them with strict walk-forward backtests.
+
+**Core Philosophy:** Each strategy defines its own entry AND exit conditions. Holding periods are determined by strategy logic (not hardcoded time windows), allowing for dynamic position management while maintaining focus on short-term opportunities with risk control.
 
 **Scope stance (v1):** Focus on *correctness, reproducibility, and risk-aware ranking* before any real-money execution.
 
@@ -27,7 +29,10 @@
 
 5) **Risk management is part of every strategy evaluation.**
    - A “good signal” without a risk rule is incomplete.
-
+6) **Strategies control their own exits.**
+   - Each strategy implements `should_close_position()` to define exit logic.
+   - Exit conditions can be based on technical signals, P&L targets, time limits, or market conditions.
+   - This allows flexible position management while keeping focus on short-term, low-risk trades.
 ---
 
 ## 1) System overview
@@ -36,12 +41,16 @@ The system has four main layers:
 
 1) **Data ingestion**: fetch and store normalized OHLCV for a symbol universe.
 2) **Feature engineering (Analyst agents)**: compute numeric features (MACD/RSI/ATR/volume metrics, etc.).
-3) **Strategies (Trader agents)**: select symbols and issue signals based on features + explicit risk gates.
-4) **Evaluation (Backtesting & reports)**: run walk-forward sliding-window backtests and persist results for comparison.
+3) **Strategies (Trader agents)**: 
+   - Select symbols and issue entry signals based on features + explicit risk gates
+   - Define exit conditions via `should_close_position()` method
+   - Control holding time dynamically based on market conditions
+4) **Evaluation (Backtesting & reports)**: run walk-forward backtests using strategy-defined exits and persist results for comparison.
 
-Target horizon:
-- **Window:** 4 hours
-- **Shift:** 2 hours (overlapping windows)
+Evaluation approach:
+- **Window shift:** 2 hours (how often we evaluate for new positions)
+- **Position management:** Strategy-controlled via exit conditions
+- **Target style:** Short-term trades (typically < 8 hours) with low-risk focus
 - Each evaluation slice is independent in v1 (no compounding).
 
 ---
@@ -163,25 +172,27 @@ class BacktestRun(models.Model):
 	start_time = models.DateTimeField()
 	end_time = models.DateTimeField()
 	base_timeframe = models.CharField(max_length=5, default="5m")
-	window_hours = models.IntegerField(default=4)
-	shift_hours = models.IntegerField(default=2)
+	window_hours = models.IntegerField(default=4)  # Used as max holding safety limit
+	shift_hours = models.IntegerField(default=2)   # Evaluation frequency
 	fee_bps = models.IntegerField(default=10)  # 10 bps = 0.10% per side (configurable)
 	slippage_bps = models.IntegerField(default=0)  # optional
 	created_at = models.DateTimeField(auto_now_add=True)
 ```
 
-### 4.4 Trade results (slice-level outcomes)
+Note: `window_hours` is now a maximum holding limit. Actual exit times are determined by strategy logic via `should_close_position()`.
 
-In v1, each window’s “trade” is evaluated independently.
+In v1, each window's "trade" is evaluated independently. Exit time is determined by strategy logic.
 
 ```python
 class TradeResult(models.Model):
 	backtest = models.ForeignKey(BacktestRun, on_delete=models.CASCADE)
 	symbol = models.CharField(max_length=20)
 	entry_time = models.DateTimeField()
-	exit_time = models.DateTimeField()
+	exit_time = models.DateTimeField()  # Determined by strategy exit conditions
 	direction = models.CharField(max_length=10, default="LONG")  # v1: LONG only
 	return_pct = models.FloatField()        # after fees/slippage
+	max_drawdown = models.FloatField()      # within the holding window (approx.)
+	metadata = models.JSONField(default=dict, blank=True)  # optional: ranks, feature snapshots, exit_reason
 	max_drawdown = models.FloatField()      # within the holding window (approx.)
 	metadata = models.JSONField(default=dict, blank=True)  # optional: ranks, feature snapshots
 ```
@@ -244,7 +255,7 @@ Feature “favorability” should be expressed as normalized numeric scores (e.g
 
 ### 5.3 Strategy (“Trader agent”) interface
 
-Strategies act on features at time $t$ to select symbols for the next holding window.
+Strategies act on features at time $t$ to select symbols and manage positions.
 
 ```python
 class TradingStrategy:
@@ -257,13 +268,39 @@ class TradingStrategy:
 	def generate_signal(self, symbol, features_df, current_time):
 		"""Return "LONG" or "FLAT" (v1)."""
 		raise NotImplementedError
+	
+	def should_close_position(self, symbol, features, entry_time, current_time, 
+	                          entry_price, current_price):
+		"""
+		Determine if an open position should be closed.
+		
+		Each strategy defines its own exit logic based on:
+		- Technical indicators (e.g., RSI overbought, MACD reversal)
+		- Profit targets or stop losses
+		- Time-based limits (if desired)
+		- Market conditions (volume, volatility)
+		
+		Returns True to close position, False to continue holding.
+		"""
+		raise NotImplementedError
 ```
 
 **Mandatory v1 baseline strategy (rule-based):**
+
+*Entry conditions:*
 - Gate by volatility: `ATR/price <= threshold`
 - Momentum confirmation: MACD histogram slope > 0
-- RSI in a “healthy long” band (e.g., 40–65)
+- RSI in a "healthy long" band (e.g., 40–65)
 - Rank candidates by a combined momentum/volume score
+
+*Exit conditions (example):*
+- RSI becomes overbought (>75) - take profits
+- MACD histogram turns negative - momentum reversal
+- Stop loss: down >3% from entry
+- Take profit: up >6% from entry  
+- Maximum hold time: 8 hours (safety fallback)
+
+This approach allows strategies to adapt holding periods to market conditions while maintaining short-term, low-risk focus.
 
 ### 5.4 Risk rules (explicit)
 
