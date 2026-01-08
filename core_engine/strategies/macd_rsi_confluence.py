@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict
 from datetime import datetime
-from .base import TradingStrategy
+from .base import TradingStrategy, StrategySignal
 
 
 class MACDRSIStrategy(TradingStrategy):
@@ -29,6 +29,10 @@ class MACDRSIStrategy(TradingStrategy):
     evaluation_interval_hours = 2.0         # Check every 2 hours
     max_hold_hours = 8.0                    # Maximum 8 hour hold
     typical_hold_range = "4-8 hours"        # Typical hold duration
+    
+    # Alpha signal metadata
+    default_horizon_days = 1                # Momentum typically plays out within 1 day
+    requires_volatility_adjustment = False  # Already accounts for volatility via ATR filter
     
     def __init__(self, parameters: Dict = None):
         default_params = {
@@ -95,6 +99,80 @@ class MACDRSIStrategy(TradingStrategy):
             return "LONG"
         
         return "FLAT"
+    
+    def generate_alpha_signal(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        current_time: datetime
+    ) -> StrategySignal:
+        """
+        Generate alpha signal for MACD-RSI confluence strategy (Phase 1).
+        
+        Alpha score calculation:
+        - Based on ranking score (0 to 1)
+        - Combines RSI position, MACD strength, volume, and volatility
+        - Positive alpha indicates long opportunity
+        
+        Returns:
+            StrategySignal with alpha_score, confidence, and metadata
+        """
+        latest = self.get_latest_features(features, current_time)
+        
+        if latest is None:
+            return StrategySignal(
+                timestamp=current_time,
+                symbol=symbol,
+                alpha_score=0.0,
+                confidence=0.0,
+                horizon_days=self.default_horizon_days,
+                volatility_adjusted=False,
+                metadata={'error': 'no_data', 'strategy_name': self.name}
+            )
+        
+        # Check if passes entry filters
+        passes_filters = self._passes_filters(latest)
+        
+        if not passes_filters:
+            return StrategySignal(
+                timestamp=current_time,
+                symbol=symbol,
+                alpha_score=0.0,
+                confidence=0.0,
+                horizon_days=self.default_horizon_days,
+                volatility_adjusted=False,
+                metadata={'passes_filters': False, 'strategy_name': self.name}
+            )
+        
+        # Calculate ranking score (already normalized 0-1)
+        score = self._calculate_score(latest)
+        
+        # Alpha score = ranking score
+        alpha_score = score if not np.isnan(score) else 0.0
+        
+        # Confidence based on MACD strength and RSI position
+        confidence = self._calculate_confidence(latest, alpha_score)
+        
+        # Build metadata
+        metadata = {
+            'strategy_name': self.name,
+            'rsi': float(latest.get('rsi', 50)),
+            'macd_histogram': float(latest.get('macd_histogram', 0)),
+            'volume_ratio': float(latest.get('volume_ratio', 1)),
+            'atr_pct': float(latest.get('atr_pct', 0)),
+            'ranking_score': float(alpha_score),
+            'passes_filters': True,
+        }
+        
+        return StrategySignal(
+            timestamp=current_time,
+            symbol=symbol,
+            alpha_score=alpha_score,
+            confidence=confidence,
+            horizon_days=self.default_horizon_days,
+            volatility_adjusted=False,
+            metadata=metadata
+        )
     
     def _passes_filters(self, row: pd.Series) -> bool:
         """Check if row passes all filter conditions."""
@@ -218,3 +296,34 @@ class MACDRSIStrategy(TradingStrategy):
         )
         
         return score
+    
+    def _calculate_confidence(self, row: pd.Series, alpha_score: float) -> float:
+        """
+        Calculate confidence in the momentum signal.
+        
+        Confidence factors:
+        - MACD histogram strength (stronger = more confident)
+        - RSI in optimal zone (45-60 = most confident)
+        - Volume confirmation (higher volume = more confident)
+        
+        Returns:
+            Confidence score from 0 to 1
+        """
+        confidence = alpha_score  # Base confidence on alpha score
+        
+        # Boost confidence for strong MACD
+        macd_hist = row.get('macd_histogram', 0)
+        if macd_hist > 0.05:  # Strong positive MACD
+            confidence = min(1.0, confidence * 1.1)
+        
+        # Boost confidence for optimal RSI (50-60)
+        rsi = row.get('rsi', 50)
+        if 50 <= rsi <= 60:
+            confidence = min(1.0, confidence * 1.1)
+        
+        # Boost confidence for strong volume
+        volume_ratio = row.get('volume_ratio', 1.0)
+        if volume_ratio > 1.2:
+            confidence = min(1.0, confidence * 1.05)
+        
+        return min(1.0, max(0.0, confidence))

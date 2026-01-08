@@ -1,0 +1,267 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Portfolio Manager - AlgoTrader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Portfolio Manager</h2>
+    <p>Combine multiple strategies to create a diversified portfolio. Select strategies, choose how to combine their signals, and decide how to allocate capital.</p>
+    
+    <form method="post" action="{% url 'trading:portfolio_backtest' %}">
+        {% csrf_token %}
+        
+        <div class="form-section">
+            <h3>Select Strategies</h3>
+            <p class="help-text">Choose which strategies to include in your portfolio</p>
+            
+            {% for strategy in strategies %}
+            <div class="checkbox-item">
+                <input type="checkbox" 
+                       name="strategies" 
+                       value="{{ strategy.id }}" 
+                       id="strategy_{{ strategy.id }}"
+                       {% if strategy.id in selected_strategy_ids %}checked{% endif %}>
+                <label for="strategy_{{ strategy.id }}">
+                    <strong>{{ strategy.name }}</strong>
+                    {% if strategy.description %}
+                    <br><small>{{ strategy.description|truncatewords:20 }}</small>
+                    {% endif %}
+                </label>
+            </div>
+            {% empty %}
+            <p>No active strategies found. <a href="{% url 'trading:strategy_list' %}">Go to strategies</a> to activate some.</p>
+            {% endfor %}
+        </div>
+        
+        <div class="form-section">
+            <h3>Signal Combination Method</h3>
+            <p class="help-text">How should signals from multiple strategies be combined?</p>
+            
+            {% for method in combination_methods %}
+            <div class="radio-item">
+                <input type="radio" 
+                       name="combination_method" 
+                       value="{{ method }}" 
+                       id="comb_{{ method }}"
+                       {% if method == combination_method %}checked{% endif %}>
+                <label for="comb_{{ method }}">
+                    <strong>
+                    {% if method == "weighted" %}Weighted Average
+                    {% elif method == "confidence_weighted" %}Confidence Weighted
+                    {% elif method == "rank_average" %}Rank Average
+                    {% elif method == "best_strategy" %}Best Strategy
+                    {% else %}{{ method }}
+                    {% endif %}
+                    </strong>
+                    <br><small>
+                    {% if method == "weighted" %}Equal or custom weights for each strategy
+                    {% elif method == "confidence_weighted" %}Weight by strategy confidence levels
+                    {% elif method == "rank_average" %}Average of strategy ranks (robust to outliers)
+                    {% elif method == "best_strategy" %}Use signal from most confident strategy
+                    {% endif %}
+                    </small>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="form-section">
+            <h3>Capital Allocation Method</h3>
+            <p class="help-text">How should capital be distributed across positions?</p>
+            
+            {% for method in allocation_methods %}
+            <div class="radio-item">
+                <input type="radio" 
+                       name="allocation_method" 
+                       value="{{ method }}" 
+                       id="alloc_{{ method }}"
+                       {% if method == allocation_method %}checked{% endif %}>
+                <label for="alloc_{{ method }}">
+                    <strong>
+                    {% if method == "proportional" %}Proportional
+                    {% elif method == "equal_weight" %}Equal Weight
+                    {% elif method == "top_n" %}Top N
+                    {% elif method == "threshold" %}Threshold
+                    {% else %}{{ method }}
+                    {% endif %}
+                    </strong>
+                    <br><small>
+                    {% if method == "proportional" %}Allocate proportional to alpha scores
+                    {% elif method == "equal_weight" %}Equal allocation to all positions
+                    {% elif method == "top_n" %}Equal weight to top N positions
+                    {% elif method == "threshold" %}Tiered allocation based on alpha strength
+                    {% endif %}
+                    </small>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="form-section">
+            <h3>Backtest Parameters</h3>
+            
+            <div class="form-group">
+                <label for="available_data">Available Data (select matching timeframe)</label>
+                <select id="available_data" onchange="selectData(this)">
+                    <option value="">-- Select data range --</option>
+                    {% for data in available_data %}
+                    <option value="{{ data.symbol }}|{{ data.timeframe }}|{{ data.min_date.isoformat }}|{{ data.max_date.isoformat }}">
+                        {{ data.symbol }} ({{ data.timeframe }}) - {{ data.count }} candles - {{ data.min_date|date:"Y-m-d" }} to {{ data.max_date|date:"Y-m-d" }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <small style="color: #666; display: block; margin-top: 0.5rem;">
+                    Select ingested data to auto-fill symbol and date range. Make sure timeframe matches strategies' requirements.
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label for="total_capital">Total Capital ($)</label>
+                <input type="number" 
+                       id="total_capital" 
+                       name="total_capital" 
+                       value="{{ total_capital }}" 
+                       min="1000" 
+                       step="1000">
+            </div>
+            
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="datetime-local" 
+                       id="start_date" 
+                       name="start_date" 
+                       required>
+            </div>
+            
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="datetime-local" 
+                       id="end_date" 
+                       name="end_date" 
+                       required>
+            </div>
+            
+            <div class="form-group">
+                <label for="symbol_universe">Symbol Universe (comma-separated)</label>
+                <input type="text" 
+                       id="symbol_universe" 
+                       name="symbol_universe" 
+                       placeholder="BTCUSDT, ETHUSDT, BNBUSDT"
+                       required>
+            </div>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-success">Run Portfolio Backtest</button>
+        </div>
+    </form>
+</div>
+
+<style>
+.form-section {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.form-section h3 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.help-text {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.checkbox-item,
+.radio-item {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: white;
+    border-radius: 4px;
+    border: 2px solid #ecf0f1;
+    transition: border-color 0.2s;
+}
+
+.checkbox-item:hover,
+.radio-item:hover {
+    border-color: #3498db;
+}
+
+.checkbox-item input,
+.radio-item input {
+    margin-right: 0.5rem;
+}
+
+.checkbox-item label,
+.radio-item label {
+    cursor: pointer;
+}
+
+.form-group {
+    margin: 1rem 0;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #ecf0f1;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.form-actions {
+    margin-top: 2rem;
+    text-align: center;
+}
+</style>
+
+<script>
+function selectData(select) {
+    const value = select.value;
+    if (!value) return;
+    
+    const parts = value.split('|');
+    const symbol = parts[0];
+    const timeframe = parts[1];
+    const minDate = parts[2];
+    const maxDate = parts[3];
+    
+    // Auto-fill symbol
+    document.getElementById('symbol_universe').value = symbol;
+    
+    // Auto-fill dates (convert ISO to datetime-local format)
+    const startInput = document.getElementById('start_date');
+    const endInput = document.getElementById('end_date');
+    
+    if (startInput && minDate) {
+        // Convert from ISO to datetime-local format (YYYY-MM-DDTHH:mm)
+        startInput.value = minDate.slice(0, 16);
+    }
+    if (endInput && maxDate) {
+        endInput.value = maxDate.slice(0, 16);
+    }
+    
+    // Show info about timeframe
+    alert(`Selected data with timeframe: ${timeframe}\\n\\nMake sure your selected strategies support this timeframe!`);
+}
+</script>
+
+{% endblock %}

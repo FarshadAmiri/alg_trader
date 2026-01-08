@@ -1,53 +1,118 @@
 # 🤖 Algorithmic Crypto Trading Research Platform
 
-A systematic crypto trading research platform for evaluating short-term (4-hour) trading opportunities using technical indicators and rule-based strategies.
+**Status**: Phase 1 Complete - Production Ready  
+**Last Updated**: January 8, 2026
 
-## 📋 Overview
+A professional algorithmic trading research platform with **alpha-score architecture** and **portfolio management** capabilities.
 
-This platform enables:
-- **Data ingestion** from crypto exchanges (Nobitex, CCXT-compatible exchanges)
-- **Feature engineering** with technical indicators (MACD, RSI, ATR, volume metrics)
-- **Strategy evaluation** using walk-forward backtesting
-- **Performance analysis** with comprehensive metrics
-- **Web interface** for managing strategies and viewing results
+---
 
-**Important**: This is a research/evaluation tool. Paper trade extensively before considering real trading.
+## 📚 Documentation Guide
+
+- **[PROJECT_STATE.md](PROJECT_STATE.md)** ⭐ **START HERE** - Complete project overview, current state, and developer handoff
+- **[QUICKSTART.md](QUICKSTART.md)** - Step-by-step tutorial for first-time setup
+- **[plan_now.md](plan_now.md)** - Phase 1 implementation details (completed)
+- **[plan_future.md](plan_future.md)** - Phase 2 roadmap (LLM evolution)
+- **[IMPLEMENTATION_COMPLETE.md](IMPLEMENTATION_COMPLETE.md)** - Detailed Phase 1 completion report
+
+---
+
+## ⚡ Quick Start (5 minutes)
+
+```bash
+# Setup
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py load_strategies
+
+# Run server
+python manage.py runserver 9000
+
+# Visit: http://127.0.0.1:9000/
+```
+
+**Next Steps**: See [QUICKSTART.md](QUICKSTART.md) for detailed tutorial.
+
+---
+
+## 🎯 What This Platform Does
+
+### **Core Features**
+- **Backtest trading strategies** on historical cryptocurrency data
+- **Combine multiple strategies** into portfolios
+- **Alpha-score system** (industry-standard quantitative approach)
+- **14+ evaluation metrics** (Sharpe, Sortino, Calmar, IC, etc.)
+- **Web interface** for configuration and results
+- **Portfolio optimization** with 4 combination × 4 allocation methods
+
+### **NOT for Live Trading Yet**
+This is a research and backtesting tool. Phase 2 will add live trading capabilities.
 
 ---
 
 ## 🏗️ Architecture
 
-The system follows strict separation of concerns:
+### **Three-Layer Design**
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  Django (webapp + trading app)                  │
-│  - Persistence (models)                         │
-│  - Orchestration (management commands)          │
-│  - Visualization (web UI)                       │
-│  - NO trading logic                             │
+│  1. Strategy Layer                              │
+│     - Individual strategies generate signals    │
+│     - Alpha score: -1 to +1 (conviction)       │
+│     - Confidence: 0 to 1 (certainty)           │
 └─────────────────────────────────────────────────┘
-                     ↕
+                     ↓
 ┌─────────────────────────────────────────────────┐
-│  core_engine/ (Pure Python - NO Django imports) │
-│                                                 │
-│  ├── data/         Exchange providers, fetchers │
-│  ├── features/     Technical indicators         │
-│  ├── strategies/   Trading logic                │
-│  ├── risk/         Risk management              │
-│  └── backtest/     Walk-forward evaluation      │
+│  2. Portfolio Layer (Phase 1 ✅)                │
+│     - Combines multiple strategy signals        │
+│     - 4 combination methods                     │
+│     - 4 capital allocation methods              │
+└─────────────────────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────┐
+│  3. Execution Layer (Phase 2 - Future)          │
+│     - Order management                          │
+│     - Risk controls                             │
+│     - Live trading                              │
 └─────────────────────────────────────────────────┘
 ```
+
+### **Technology Stack**
+- **Django 4.2.9**: Web framework + database ORM
+- **Pure Python Engine**: No Django dependencies in core logic
+- **Pandas/NumPy**: Data analysis
+- **CCXT**: Exchange connectivity
+- **SQLite**: Database (PostgreSQL-ready)
 
 ---
 
-## 🚀 Quick Start
+## 📁 Project Structure
 
-### 1. Installation
+```
+alg_trader/
+├── core_engine/              # Trading logic (pure Python)
+│   ├── strategies/          # 3 built-in strategies
+│   ├── portfolio/          # Portfolio management ✨ NEW
+│   ├── evaluation/         # Performance metrics ✨ NEW
+│   ├── backtest/           # Backtesting engine
+│   ├── data/               # Exchange connectivity
+│   ├── features/           # Technical indicators
+│   └── risk/               # Risk management
+├── trading/                # Django web app
+│   ├── templates/          # HTML templates
+│   ├── management/         # CLI commands
+│   └── models.py           # Database models
+├── webapp/                 # Django settings
+├── PROJECT_STATE.md        # ⭐ Developer handoff doc
+├── README.md               # This file
+└── requirements.txt        # Dependencies
+```
 
-```bash
-# Clone repository
-cd d:\Git_repos\alg_trader
+**Full structure**: See [STRUCTURE.md](STRUCTURE.md)
+
+---
 
 # Create virtual environment
 python -m venv venv
@@ -67,104 +132,187 @@ python manage.py load_strategies
 python manage.py createsuperuser
 ```
 
-### 2. Ingest Market Data
+## 🎨 Key Features (Phase 1 Complete)
 
+### **Alpha-Score Architecture** ✅
+- Strategies output **alpha scores** (-1 to +1) instead of binary buy/sell
+- Each signal includes **confidence level** (0 to 1)
+- **Metadata** for transparency and debugging
+- Industry-standard approach used by quantitative hedge funds
+
+### **Portfolio Management** ✅
+Combine multiple strategies intelligently:
+
+**4 Signal Combination Methods:**
+- **Weighted Average**: Equal or custom weights
+- **Confidence Weighted**: Trust confident signals more
+- **Rank Average**: Robust to outliers
+- **Best Strategy**: Use most confident
+
+**4 Capital Allocation Methods:**
+- **Proportional**: Larger positions for stronger signals
+- **Equal Weight**: Same size all positions
+- **Top N**: Only trade best N signals
+- **Threshold**: Tiered sizing by alpha strength
+
+### **Enhanced Evaluation** ✅
+14+ metrics including:
+- Sharpe, Sortino, Calmar ratios
+- Information Coefficient (predictive power)
+- Alpha decay analysis
+- Strategy comparison tools
+
+### **Web Interface** ✅
+- Portfolio manager page
+- Data selection from ingested history
+- Arbitrary date range selection
+- Results visualization
+- Strategy comparison
+
+---
+
+## 💻 Usage Examples
+
+### Web Interface (Recommended)
+
+1. **Start server**: `python manage.py runserver 9000`
+2. **Ingest data**: Go to Data Management → Ingest Data
+3. **Test strategy**: Strategies → Select one → Run Backtest
+4. **Test portfolio**: Portfolio → Select strategies → Configure → Run
+
+### Command Line
+
+**Ingest with specific date range:**
 ```bash
-# Example: Fetch 30 days of 5-minute data for BTC and ETH using CCXT (Binance)
 python manage.py ingest_market_data \
-    --symbols "BTC/USDT,ETH/USDT" \
-    --timeframe 5m \
-    --start-date 30 \
-    --provider ccxt \
-    --exchange binance
+    --symbols "BTCUSDT,ETHUSDT" \
+    --timeframe 1h \
+    --start-date "2025-01-01" \
+    --end-date "2025-12-31" \
+    --provider mock  # or ccxt
 ```
 
-**Options**:
-- `--symbols`: Comma-separated list of trading pairs
-- `--timeframe`: Candle timeframe (5m, 15m, 1h, 4h, 1d)
-- `--start-date`: Days ago or YYYY-MM-DD
-- `--end-date`: YYYY-MM-DD (defaults to now)
-- `--provider`: `nobitex` or `ccxt`
-- `--exchange`: Exchange name for CCXT (binance, kraken, etc.)
-
-### 3. Run Backtest
-
+**Run single strategy backtest:**
 ```bash
-# Example: Test MACD RSI strategy on BTC/ETH
 python manage.py run_backtest \
     --strategy "MACD RSI Confluence" \
-    --symbols "BTC/USDT,ETH/USDT" \
-    --start-date "2025-12-01 00:00" \
-    --end-date "2025-12-15 00:00" \
-    --window-hours 4 \
-    --shift-hours 2 \
-    --fee-bps 10
-```
-
-**Options**:
-- `--strategy`: Strategy name (from database)
-- `--symbols`: Symbols to backtest
-- `--start-date`, `--end-date`: Date range
-- `--window-hours`: Holding period (default: 4)
-- `--shift-hours`: Window shift (default: 2)
-- `--fee-bps`: Trading fee in basis points (10 = 0.10%)
-
-### 4. View Results
-
-```bash
-# Start development server
-python manage.py runserver
-
-# Open browser to http://127.0.0.1:8000/
+    --symbols "BTCUSDT" \
+    --start-date "2025-12-01" \
+    --end-date "2025-12-31"
 ```
 
 ---
 
 ## 📊 Built-in Strategies
 
-### 1. MACD RSI Confluence
-**Module**: `core_engine.strategies.macd_rsi_confluence:MACDRSIStrategy`
+### 1. Bollinger Mean Reversion
+- **Timeframe**: 1h
+- **Logic**: Buy oversold, sell overbought (mean reversion)
+- **Indicators**: Bollinger Bands, RSI, Volume, ATR
+- **Alpha**: Setup quality score
+- **Confidence**: Oversold strength + volume
 
-Entry conditions:
-- MACD histogram > 0
-- RSI between 40-65 (healthy long zone)
-- ATR/price < 5% (volatility filter)
-- Volume > 80% of average
+### 2. MACD RSI Confluence
+- **Timeframe**: 4h
+- **Logic**: Momentum confirmation with MACD + RSI
 
-Ranks symbols by combined momentum/volume score.
-
-### 2. Momentum Rank
-**Module**: `core_engine.strategies.momentum_rank:MomentumRankStrategy`
-
-Ranks symbols by multi-timeframe momentum:
-- Short/medium/long-term price momentum
-- MACD confirmation
-- Volume z-score filter
-- Volatility cap
+### 3. Momentum Rank
+- **Timeframe**: 1d
+- **Logic**: Multi-timeframe momentum alignment
+- **Indicators**: Multi-period momentum, Volume Z-score, ATR
+- **Alpha**: Momentum score
+- **Confidence**: Timeframe agreement
 
 ---
 
-## 📝 Creating Custom Strategies
+## 🛠️ Development
 
-1. Create a new file in `core_engine/strategies/`:
+### Adding a New Strategy
 
-```python
-from .base import TradingStrategy
-import pandas as pd
+See [PROJECT_STATE.md](PROJECT_STATE.md) for detailed workflow.
 
-class MyStrategy(TradingStrategy):
-    name = "my_strategy"
-    
-    def __init__(self, parameters=None):
-        super().__init__(parameters)
-    
-    def select_symbols(self, features_by_symbol, current_time):
-        # Your selection logic
-        candidates = []
-        for symbol, features in features_by_symbol.items():
-            latest = self.get_latest_features(features, current_time)
-            if latest is not None and self._passes_filters(latest):
-                score = self._calculate_score(latest)
+**Quick steps:**
+1. Create file in `core_engine/strategies/your_strategy.py`
+2. Inherit from `BaseStrategy`
+3. Implement `generate_alpha_signal()` method
+4. Add to database: `python manage.py load_strategies`
+
+### Database Changes
+
+```bash
+# After modifying models.py
+python manage.py makemigrations
+python manage.py migrate
+```
+
+### Testing
+
+```bash
+# Test with mock data (no network required)
+python manage.py ingest_market_data \
+    --symbols "BTCUSDT" \
+    --timeframe 1h \
+    --start-date 30 \
+    --provider mock
+
+# Run backtest
+python manage.py run_backtest \
+    --strategy "MACD RSI Confluence" \
+    --symbols "BTCUSDT" \
+    --start-date "2025-12-01" \
+    --end-date "2025-12-31"
+```
+
+---
+
+## 🔮 Future Roadmap (Phase 2)
+
+See [plan_future.md](plan_future.md) for complete details.
+
+**Next Steps:**
+- LLM integration for strategy generation
+- Code validation and safety
+- Strategy version control (Git)
+- Overfitting detection
+- Regime analysis
+- A/B testing framework
+- Auto-rollback mechanisms
+
+**Goal**: Self-evolving trading system where AI generates, tests, and deploys new strategies.
+
+---
+
+## 📚 Documentation
+
+- **[PROJECT_STATE.md](PROJECT_STATE.md)** - Complete system overview and handoff
+- **[QUICKSTART.md](QUICKSTART.md)** - Step-by-step tutorial
+- **[IMPLEMENTATION_COMPLETE.md](IMPLEMENTATION_COMPLETE.md)** - Phase 1 detailed report
+- **[plan_now.md](plan_now.md)** - Phase 1 implementation plan
+- **[plan_future.md](plan_future.md)** - Phase 2 roadmap
+- **[STRUCTURE.md](STRUCTURE.md)** - Detailed file structure
+
+---
+
+## ⚠️ Disclaimer
+
+This is a research and educational tool. **NOT financial advice**. 
+
+- Backtesting does not guarantee future results
+- Past performance is not indicative of future returns
+- Cryptocurrencies are highly volatile and risky
+- Only trade with money you can afford to lose
+- Paper trade extensively before considering real trading
+- Understand the strategies before using them
+
+---
+
+## 📄 License
+
+See [LICENSE](LICENSE) file for details.
+
+---
+
+**Ready to start?** Read [PROJECT_STATE.md](PROJECT_STATE.md) for complete context, then follow [QUICKSTART.md](QUICKSTART.md).
                 candidates.append((symbol, score))
         
         candidates.sort(key=lambda x: x[1], reverse=True)

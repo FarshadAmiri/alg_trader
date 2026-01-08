@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict
 from datetime import datetime
-from .base import TradingStrategy
+from .base import TradingStrategy, StrategySignal
 
 
 class MomentumRankStrategy(TradingStrategy):
@@ -26,6 +26,10 @@ class MomentumRankStrategy(TradingStrategy):
     evaluation_interval_hours = 1.0         # Check every hour
     max_hold_hours = 6.0                    # Maximum 6 hour hold
     typical_hold_range = "2-6 hours"        # Typical hold duration
+    
+    # Alpha signal metadata
+    default_horizon_days = 1                # Momentum typically plays out within 1 day
+    requires_volatility_adjustment = False  # Already accounts for volatility via ATR filter
     
     def __init__(self, parameters: Dict = None):
         default_params = {
@@ -89,6 +93,76 @@ class MomentumRankStrategy(TradingStrategy):
             return "LONG"
         
         return "FLAT"
+    
+    def generate_alpha_signal(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        current_time: datetime
+    ) -> StrategySignal:
+        """
+        Generate alpha signal for momentum rank strategy (Phase 1).
+        
+        Alpha score calculation:
+        - Based on multi-timeframe momentum score
+        - Positive alpha indicates strong momentum
+        - Higher score = stronger trend across timeframes
+        
+        Returns:
+            StrategySignal with alpha_score, confidence, and metadata
+        """
+        latest = self.get_latest_features(features, current_time)
+        
+        if latest is None:
+            return StrategySignal(
+                timestamp=current_time,
+                symbol=symbol,
+                alpha_score=0.0,
+                confidence=0.0,
+                horizon_days=self.default_horizon_days,
+                volatility_adjusted=False,
+                metadata={'error': 'no_data', 'strategy_name': self.name}
+            )
+        
+        # Check if passes filters
+        passes_filters = self._passes_filters(latest)
+        
+        # Calculate momentum score (can be negative for downtrends)
+        momentum_score = self._calculate_momentum_score(latest)
+        
+        # Normalize momentum score to [-1, 1] range (already close to this)
+        alpha_score = np.clip(momentum_score, -1.0, 1.0)
+        
+        # Only set positive alpha if passes filters
+        if not passes_filters or alpha_score < self.parameters['min_momentum_score']:
+            alpha_score = 0.0
+        
+        # Confidence based on momentum consistency
+        confidence = self._calculate_confidence(latest, momentum_score)
+        
+        # Build metadata
+        metadata = {
+            'strategy_name': self.name,
+            'momentum_score': float(momentum_score),
+            'atr_pct': float(latest.get('atr_pct', 0)),
+            'volume_zscore': float(latest.get('volume_zscore', 0)),
+            'passes_filters': passes_filters,
+        }
+        
+        # Add momentum components if available
+        for col in ['price_momentum_1', 'price_momentum_5', 'price_momentum_10']:
+            if col in latest.index:
+                metadata[col] = float(latest[col])
+        
+        return StrategySignal(
+            timestamp=current_time,
+            symbol=symbol,
+            alpha_score=alpha_score,
+            confidence=confidence,
+            horizon_days=self.default_horizon_days,
+            volatility_adjusted=False,
+            metadata=metadata
+        )
     
     def _passes_filters(self, row: pd.Series) -> bool:
         """Check basic filters."""
@@ -199,3 +273,44 @@ class MomentumRankStrategy(TradingStrategy):
             score /= weight_sum
         
         return score
+    
+    def _calculate_confidence(self, row: pd.Series, momentum_score: float) -> float:
+        """
+        Calculate confidence in the momentum signal.
+        
+        Confidence factors:
+        - Consistency across timeframes (all positive = more confident)
+        - Volume confirmation (higher volume z-score = more confident)
+        - Momentum strength (higher score = more confident)
+        
+        Returns:
+            Confidence score from 0 to 1
+        """
+        # Base confidence on absolute momentum strength
+        confidence = min(abs(momentum_score), 1.0)
+        
+        # Boost confidence if multiple timeframes agree
+        positive_count = 0
+        total_count = 0
+        for col in ['price_momentum_1', 'price_momentum_5', 'price_momentum_10']:
+            if col in row.index and not pd.isna(row[col]):
+                total_count += 1
+                if row[col] > 0:
+                    positive_count += 1
+        
+        if total_count > 0:
+            agreement = positive_count / total_count
+            if agreement > 0.8:  # Strong agreement
+                confidence = min(1.0, confidence * 1.15)
+        
+        # Boost confidence for strong volume
+        volume_zscore = row.get('volume_zscore', 0)
+        if volume_zscore > 0.5:
+            confidence = min(1.0, confidence * 1.1)
+        
+        # Reduce confidence in high volatility
+        atr_pct = row.get('atr_pct', 0)
+        if atr_pct > 5.0:
+            confidence *= 0.9
+        
+        return min(1.0, max(0.0, confidence))

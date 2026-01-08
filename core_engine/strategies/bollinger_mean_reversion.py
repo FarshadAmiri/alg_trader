@@ -33,7 +33,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict
 from datetime import datetime, timedelta
-from .base import TradingStrategy
+from .base import TradingStrategy, StrategySignal
 
 
 class BollingerMeanReversionStrategy(TradingStrategy):
@@ -49,9 +49,13 @@ class BollingerMeanReversionStrategy(TradingStrategy):
     # Strategy metadata
     preferred_timeframe = "5m"              # Needs 5-minute candles
     evaluation_mode = "every_bar"           # Check every candle (high frequency)
-    evaluation_interval_hours = 0.0         # Not used in every_bar mode
+    evaluation_interval_hours = 0.5         # Portfolio mode: check every 30 minutes
     max_hold_hours = 4.0                    # Maximum 4 hour hold
     typical_hold_range = "1-3 hours"        # Typical hold duration
+    
+    # Alpha signal metadata
+    default_horizon_days = 1                # Mean reversion typically completes within 1 day
+    requires_volatility_adjustment = False  # Already accounts for volatility via ATR filter
     
     def __init__(self, parameters: Dict = None):
         default_params = {
@@ -132,6 +136,78 @@ class BollingerMeanReversionStrategy(TradingStrategy):
             return "LONG"
         
         return "FLAT"
+    
+    def generate_alpha_signal(
+        self,
+        symbol: str,
+        features: pd.DataFrame,
+        current_time: datetime
+    ) -> StrategySignal:
+        """
+        Generate alpha signal for mean reversion strategy (Phase 1).
+        
+        Alpha score calculation:
+        - Based on setup quality score (0 to 1)
+        - Positive alpha indicates long opportunity
+        - Confidence based on strength of oversold condition + volume confirmation
+        
+        Returns:
+            StrategySignal with alpha_score, confidence, and metadata
+        """
+        latest = self.get_latest_features(features, current_time)
+        
+        if latest is None:
+            return StrategySignal(
+                timestamp=current_time,
+                symbol=symbol,
+                alpha_score=0.0,
+                confidence=0.0,
+                horizon_days=self.default_horizon_days,
+                volatility_adjusted=False,
+                metadata={'error': 'no_data', 'strategy_name': self.name}
+            )
+        
+        # Check if passes entry filters
+        if not self._passes_entry_filters(latest):
+            return StrategySignal(
+                timestamp=current_time,
+                symbol=symbol,
+                alpha_score=0.0,
+                confidence=0.0,
+                horizon_days=self.default_horizon_days,
+                volatility_adjusted=False,
+                metadata={'passes_filters': False, 'strategy_name': self.name}
+            )
+        
+        # Calculate setup quality score (already 0-1)
+        setup_score = self._calculate_setup_score(latest)
+        
+        # Alpha score = setup quality score (mean reversion is always long)
+        alpha_score = setup_score
+        
+        # Confidence based on multiple factors
+        confidence = self._calculate_confidence(latest, setup_score)
+        
+        # Build metadata with key indicators
+        metadata = {
+            'strategy_name': self.name,
+            'bb_position': float(latest.get('bb_position', 0)),
+            'rsi': float(latest.get('rsi', 50)),
+            'volume_ratio': float(latest.get('volume_ratio', 1)),
+            'atr_pct': float(latest.get('atr_pct', 0)),
+            'setup_score': float(setup_score),
+            'passes_filters': True,
+        }
+        
+        return StrategySignal(
+            timestamp=current_time,
+            symbol=symbol,
+            alpha_score=alpha_score,
+            confidence=confidence,
+            horizon_days=self.default_horizon_days,
+            volatility_adjusted=False,
+            metadata=metadata
+        )
     
     def should_close_position(
         self,
@@ -269,3 +345,32 @@ class BollingerMeanReversionStrategy(TradingStrategy):
             score += vol_score * 0.1
         
         return score
+    
+    def _calculate_confidence(self, row: pd.Series, setup_score: float) -> float:
+        """
+        Calculate confidence in the mean reversion signal.
+        
+        Confidence factors:
+        - Setup quality score (higher = more confident)
+        - Volume surge strength (stronger = more confident)
+        - RSI extremeness (more oversold = more confident)
+        - Volatility regime (lower vol = more confident)
+        
+        Returns:
+            Confidence score from 0 to 1
+        """
+        confidence = setup_score  # Base confidence on setup quality
+        
+        # Boost confidence for very strong volume surges (indicates reversal)
+        if 'volume_ratio' in row.index and row['volume_ratio'] > 1.5:
+            confidence = min(1.0, confidence * 1.1)
+        
+        # Boost confidence for extreme RSI (< 25)
+        if 'rsi' in row.index and row['rsi'] < 25:
+            confidence = min(1.0, confidence * 1.1)
+        
+        # Reduce confidence in high volatility
+        if 'atr_pct' in row.index and row['atr_pct'] > 3.0:
+            confidence *= 0.9
+        
+        return min(1.0, max(0.0, confidence))

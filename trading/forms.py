@@ -277,8 +277,18 @@ class MarketDataIngestForm(forms.Form):
             ('4h', '4 hours'),
             ('1d', '1 day'),
         ],
-        initial='5m',
+        initial='1h',
         label='Timeframe'
+    )
+    
+    date_mode = forms.ChoiceField(
+        choices=[
+            ('days_back', 'Last N Days'),
+            ('date_range', 'Specific Date Range'),
+        ],
+        initial='days_back',
+        label='Date Selection Mode',
+        widget=forms.RadioSelect
     )
     
     days_back = forms.IntegerField(
@@ -286,7 +296,22 @@ class MarketDataIngestForm(forms.Form):
         min_value=1,
         max_value=365,
         label='Days Back',
-        help_text='How many days of historical data to fetch'
+        help_text='How many days of historical data to fetch',
+        required=False
+    )
+    
+    start_date = forms.DateTimeField(
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        label='Start Date',
+        required=False,
+        help_text='Start of data range'
+    )
+    
+    end_date = forms.DateTimeField(
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        label='End Date',
+        required=False,
+        help_text='End of data range'
     )
     
     provider = forms.ChoiceField(
@@ -306,6 +331,7 @@ class MarketDataIngestForm(forms.Form):
         cleaned_data = super().clean()
         selected = cleaned_data.get('symbol_selection', [])
         custom = cleaned_data.get('custom_symbols', '')
+        date_mode = cleaned_data.get('date_mode', 'days_back')
         
         # Combine selected and custom symbols
         symbols = list(selected)
@@ -320,6 +346,18 @@ class MarketDataIngestForm(forms.Form):
         
         if not symbols:
             raise forms.ValidationError('Please select at least one symbol or enter custom symbols')
+        
+        # Validate date selection based on mode
+        if date_mode == 'days_back':
+            if not cleaned_data.get('days_back'):
+                raise forms.ValidationError('Please specify days back')
+        elif date_mode == 'date_range':
+            start_date = cleaned_data.get('start_date')
+            end_date = cleaned_data.get('end_date')
+            if not start_date or not end_date:
+                raise forms.ValidationError('Please specify both start and end dates')
+            if start_date >= end_date:
+                raise forms.ValidationError('Start date must be before end date')
         
         cleaned_data['symbols'] = symbols
         return cleaned_data

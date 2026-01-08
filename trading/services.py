@@ -5,12 +5,79 @@ This module contains the core execution logic used by both CLI and web UI.
 import pandas as pd
 import importlib
 from typing import List, Dict
+from datetime import datetime
 from django.utils import timezone
 from .models import BacktestRun, TradeResult, StrategyPerformance, Candle
 from core_engine.features.momentum import MomentumFeatures
 from core_engine.features.volatility import VolatilityFeatures
 from core_engine.features.liquidity import LiquidityFeatures, CompositeFeatures
 from core_engine.backtest.engine import BacktestEngine
+
+
+def load_features_for_backtest(symbols: List[str], start_time: datetime, end_time: datetime, timeframe: str = '1h') -> Dict[str, pd.DataFrame]:
+    """
+    Load and compute features for backtesting.
+    
+    Args:
+        symbols: List of symbol names
+        start_time: Start of backtest period
+        end_time: End of backtest period
+        timeframe: Candle timeframe (default: '1h')
+        
+    Returns:
+        Dict mapping symbol to DataFrame with features
+        
+    Raises:
+        ValueError: If no data found for any symbol
+    """
+    from django.utils import timezone
+    
+    # Ensure timezone-aware datetimes
+    if start_time.tzinfo is None:
+        start_time = timezone.make_aware(start_time)
+    if end_time.tzinfo is None:
+        end_time = timezone.make_aware(end_time)
+    
+    print(f"[INFO] Loading data for {len(symbols)} symbols from {start_time} to {end_time}...")
+    
+    # Load candle data
+    candles_by_symbol = {}
+    for symbol in symbols:
+        candles_qs = Candle.objects.filter(
+            symbol=symbol,
+            timeframe=timeframe,
+            timestamp__gte=start_time,
+            timestamp__lte=end_time
+        ).order_by('timestamp')
+        
+        if not candles_qs.exists():
+            raise ValueError(f"No data found for {symbol} at {timeframe} timeframe")
+        
+        # Convert to DataFrame - more efficient
+        df = pd.DataFrame(list(candles_qs.values('timestamp', 'open', 'high', 'low', 'close', 'volume')))
+        print(f"[INFO] Loaded {len(df)} candles for {symbol}")
+        candles_by_symbol[symbol] = df
+    
+    # Initialize feature calculators
+    momentum = MomentumFeatures()
+    volatility = VolatilityFeatures()
+    liquidity = LiquidityFeatures()
+    composite = CompositeFeatures()
+    
+    # Compute features for each symbol
+    print(f"[INFO] Computing features for {len(candles_by_symbol)} symbols...")
+    features_by_symbol = {}
+    for symbol, candles_df in candles_by_symbol.items():
+        print(f"[INFO] Computing features for {symbol}...")
+        features_df = momentum.compute(candles_df)
+        features_df = volatility.compute(features_df)
+        features_df = liquidity.compute(features_df)
+        features_df = composite.compute(features_df)
+        features_by_symbol[symbol] = features_df
+        print(f"[INFO] {symbol}: {len(features_df.columns)} features computed")
+    
+    print(f"[INFO] Feature calculation complete!")
+    return features_by_symbol
 
 
 def execute_backtest_run(backtest: BacktestRun) -> Dict:

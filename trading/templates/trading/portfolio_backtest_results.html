@@ -1,0 +1,191 @@
+{% extends 'trading/base.html' %}
+
+{% block title %}Portfolio Backtest Results - AlgoTrader{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Portfolio Backtest Results</h2>
+    
+    <div class="result-summary">
+        <h3>Configuration</h3>
+        <div class="config-grid">
+            <div class="config-item">
+                <span class="label">Strategies:</span>
+                <span class="value">{{ results.num_strategies }} ({{ results.strategy_names|join:", " }})</span>
+            </div>
+            <div class="config-item">
+                <span class="label">Combination Method:</span>
+                <span class="value">{{ results.combination_method|title }}</span>
+            </div>
+            <div class="config-item">
+                <span class="label">Allocation Method:</span>
+                <span class="value">{{ results.allocation_method|title }}</span>
+            </div>
+            <div class="config-item">
+                <span class="label">Period:</span>
+                <span class="value">{{ results.start_date }} to {{ results.end_date }}</span>
+            </div>
+            {% if results.total_time %}
+            <div class="config-item">
+                <span class="label">⏱️ Execution Time:</span>
+                <span class="value">{{ results.total_time }} (Load: {{ results.load_time }}, Backtest: {{ results.backtest_time }})</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="metrics-section">
+        <h3>Portfolio Performance Metrics</h3>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Total Return</div>
+                <div class="metric-value {% if results.portfolio_metrics.total_return >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ results.portfolio_metrics.total_return|floatformat:2 }}%
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Sharpe Ratio</div>
+                <div class="metric-value">
+                    {{ results.portfolio_metrics.sharpe_ratio|floatformat:2 }}
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Max Drawdown</div>
+                <div class="metric-value negative">
+                    {{ results.portfolio_metrics.max_drawdown|floatformat:2 }}%
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Volatility (Annual)</div>
+                <div class="metric-value">
+                    {{ results.portfolio_metrics.volatility|floatformat:2 }}%
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Sortino Ratio</div>
+                <div class="metric-value">
+                    {{ results.portfolio_metrics.sortino_ratio|floatformat:2 }}
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Calmar Ratio</div>
+                <div class="metric-value">
+                    {{ results.portfolio_metrics.calmar_ratio|floatformat:2 }}
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Win Rate</div>
+                <div class="metric-value">
+                    {{ results.portfolio_metrics.win_rate|floatformat:1 }}%
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">CAGR</div>
+                <div class="metric-value {% if results.portfolio_metrics.cagr >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ results.portfolio_metrics.cagr|floatformat:2 }}%
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="actions">
+        <a href="{% url 'trading:portfolio_manager' %}" class="btn">Run Another Backtest</a>
+        <a href="{% url 'trading:index' %}" class="btn">Home</a>
+    </div>
+</div>
+
+<style>
+.result-summary {
+    background: #e8f4f8;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.config-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.config-item .label {
+    font-weight: 600;
+    color: #555;
+    font-size: 0.9rem;
+}
+
+.config-item .value {
+    color: #2c3e50;
+}
+
+.metrics-section {
+    margin: 2rem 0;
+}
+
+.metrics-section h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #3498db;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.metric-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    text-align: center;
+    border: 2px solid #ecf0f1;
+}
+
+.metric-label {
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.metric-value.positive {
+    color: #27ae60;
+}
+
+.metric-value.negative {
+    color: #e74c3c;
+}
+
+.actions {
+    margin-top: 2rem;
+    text-align: center;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+</style>
+{% endblock %}

@@ -16,4 +16,8 @@ urlpatterns = [
     path('backtests/', views.backtests, name='backtests'),
     path('backtest/run/', views.backtest_run, name='backtest_run'),  # Legacy redirect
     path('backtest/<int:backtest_id>/results/', views.backtest_results, name='backtest_results'),
+    # Phase 1: Portfolio management
+    path('portfolio/', views.portfolio_manager, name='portfolio_manager'),
+    path('portfolio/backtest/', views.portfolio_backtest, name='portfolio_backtest'),
+    path('portfolio/backtest/results/', views.portfolio_backtest_results, name='portfolio_backtest_results'),
 ]

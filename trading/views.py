@@ -193,13 +193,23 @@ def ingest_market_data(request):
         if form.is_valid():
             symbols = form.cleaned_data['symbols']
             timeframe = form.cleaned_data['timeframe']
-            days_back = form.cleaned_data['days_back']
+            date_mode = form.cleaned_data['date_mode']
             provider_name = form.cleaned_data['provider']
             exchange_name = form.cleaned_data['exchange']
             
-            # Calculate time range
-            end_time = timezone.now()
-            start_time = end_time - timedelta(days=days_back)
+            # Calculate time range based on mode
+            if date_mode == 'days_back':
+                days_back = form.cleaned_data['days_back']
+                end_time = timezone.now()
+                start_time = end_time - timedelta(days=days_back)
+            else:  # date_range
+                start_time = form.cleaned_data['start_date']
+                end_time = form.cleaned_data['end_date']
+                # Ensure timezone-aware
+                if start_time.tzinfo is None:
+                    start_time = timezone.make_aware(start_time)
+                if end_time.tzinfo is None:
+                    end_time = timezone.make_aware(end_time)
             
             # Initialize provider
             try:
@@ -502,3 +512,207 @@ def ingest_data_ajax(request):
     response['X-Accel-Buffering'] = 'no'
     return response
 
+
+# ============================================================================
+# Phase 1: Portfolio Management Views
+# ============================================================================
+
+def portfolio_manager(request):
+    """Portfolio manager interface for combining multiple strategies."""
+    from core_engine.portfolio.manager import PortfolioManager
+    from core_engine.portfolio.combiners import SignalCombiner
+    from core_engine.portfolio.allocators import CapitalAllocator
+    from django.db import models
+    
+    # Get all active strategies
+    strategies_qs = Strategy.objects.filter(is_active=True)
+    
+    # Default settings
+    selected_strategy_ids = request.GET.getlist('strategies', [])
+    combination_method = request.GET.get('combination_method', 'weighted')
+    allocation_method = request.GET.get('allocation_method', 'proportional')
+    total_capital = float(request.GET.get('total_capital', 100000))
+    
+    # Available methods
+    combiner = SignalCombiner()
+    allocator = CapitalAllocator()
+    combination_methods = combiner.get_available_methods()
+    allocation_methods = allocator.get_available_methods()
+    
+    # Method display names
+    combination_method_names = {
+        'weighted': 'Weighted Average',
+        'confidence_weighted': 'Confidence Weighted',
+        'rank_average': 'Rank Average',
+        'best_strategy': 'Best Strategy'
+    }
+    allocation_method_names = {
+        'proportional': 'Proportional',
+        'equal_weight': 'Equal Weight',
+        'top_n': 'Top N',
+        'threshold': 'Threshold'
+    }
+    
+    # Get available data from database
+    available_data = []
+    candle_data = Candle.objects.values('symbol', 'timeframe').annotate(
+        min_date=models.Min('timestamp'),
+        max_date=models.Max('timestamp'),
+        count=models.Count('id')
+    ).order_by('timeframe', 'symbol')
+    
+    for data in candle_data:
+        available_data.append({
+            'symbol': data['symbol'],
+            'timeframe': data['timeframe'],
+            'min_date': data['min_date'],
+            'max_date': data['max_date'],
+            'count': data['count']
+        })
+    
+    context = {
+        'strategies': strategies_qs,
+        'selected_strategy_ids': [int(s) for s in selected_strategy_ids if s],
+        'combination_method': combination_method,
+        'allocation_method': allocation_method,
+        'total_capital': total_capital,
+        'combination_methods': combination_methods,
+        'allocation_methods': allocation_methods,
+        'combination_method_names': combination_method_names,
+        'allocation_method_names': allocation_method_names,
+        'available_data': available_data,
+    }
+    
+    return render(request, 'trading/portfolio_manager.html', context)
+
+
+def portfolio_backtest(request):
+    """Run backtest for a portfolio of strategies."""
+    if request.method != 'POST':
+        return redirect('trading:portfolio_manager')
+    
+    from core_engine.backtest.engine import BacktestEngine
+    import json
+    
+    # Get parameters
+    strategy_ids = request.POST.getlist('strategies')
+    combination_method = request.POST.get('combination_method', 'weighted')
+    allocation_method = request.POST.get('allocation_method', 'proportional')
+    total_capital = float(request.POST.get('total_capital', 100000))
+    start_date = request.POST.get('start_date')
+    end_date = request.POST.get('end_date')
+    symbol_universe = request.POST.get('symbol_universe', '').split(',')
+    symbol_universe = [s.strip() for s in symbol_universe if s.strip()]
+    
+    if not strategy_ids or not symbol_universe:
+        messages.error(request, 'Please select strategies and symbols')
+        return redirect('trading:portfolio_manager')
+    
+    # Load strategies
+    strategies_qs = Strategy.objects.filter(id__in=strategy_ids, is_active=True)
+    
+    if not strategies_qs.exists():
+        messages.error(request, 'No valid strategies selected')
+        return redirect('trading:portfolio_manager')
+    
+    # Instantiate strategy objects
+    strategy_instances = []
+    for strategy_obj in strategies_qs:
+        try:
+            module_path, class_name = strategy_obj.module_path.split(':')
+            module = importlib.import_module(module_path)
+            strategy_class = getattr(module, class_name)
+            strategy_instance = strategy_class(parameters=strategy_obj.parameters)
+            strategy_instances.append(strategy_instance)
+        except Exception as e:
+            messages.error(request, f'Error loading strategy {strategy_obj.name}: {e}')
+            return redirect('trading:portfolio_manager')
+    
+    # Load data and run backtest
+    try:
+        from trading.services import load_features_for_backtest
+        from datetime import datetime
+        from django.utils import timezone as tz
+        import time
+        
+        # Parse dates and make timezone-aware
+        start_time = datetime.fromisoformat(start_date)
+        end_time = datetime.fromisoformat(end_date)
+        
+        if start_time.tzinfo is None:
+            start_time = tz.make_aware(start_time)
+        if end_time.tzinfo is None:
+            end_time = tz.make_aware(end_time)
+        
+        print(f"[PORTFOLIO] Starting portfolio backtest...")
+        print(f"[PORTFOLIO] Strategies: {[s.name for s in strategy_instances]}")
+        print(f"[PORTFOLIO] Symbols: {symbol_universe}")
+        print(f"[PORTFOLIO] Period: {start_time} to {end_time}")
+        
+        start_load = time.time()
+        
+        # Load features
+        features_by_symbol = load_features_for_backtest(
+            symbol_universe,
+            start_time,
+            end_time
+        )
+        
+        load_time = time.time() - start_load
+        print(f"[PORTFOLIO] Data loaded in {load_time:.2f} seconds")
+        print(f"[PORTFOLIO] Running backtest engine...")
+        
+        start_backtest = time.time()
+        
+        # Run portfolio backtest
+        engine = BacktestEngine()
+        results = engine.run_portfolio_backtest(
+            strategies=strategy_instances,
+            features_by_symbol=features_by_symbol,
+            start_time=start_time,
+            end_time=end_time,
+            combination_method=combination_method,
+            allocation_method=allocation_method,
+            total_capital=total_capital
+        )
+        
+        backtest_time = time.time() - start_backtest
+        total_time = time.time() - start_load
+        print(f"[PORTFOLIO] Backtest completed in {backtest_time:.2f} seconds")
+        print(f"[PORTFOLIO] Total time: {total_time:.2f} seconds")
+        
+        # Store results in session for display
+        request.session['portfolio_backtest_results'] = {
+            'portfolio_metrics': results['portfolio_metrics'].to_dict(),
+            'combination_method': combination_method,
+            'allocation_method': allocation_method,
+            'num_strategies': len(strategy_instances),
+            'strategy_names': [s.name for s in strategy_instances],
+            'start_date': start_date,
+            'end_date': end_date,
+            'load_time': f"{load_time:.2f}s",
+            'backtest_time': f"{backtest_time:.2f}s",
+            'total_time': f"{total_time:.2f}s",
+        }
+        
+        messages.success(request, f'Portfolio backtest completed in {total_time:.1f} seconds!')
+        return redirect('trading:portfolio_backtest_results')
+    
+    except Exception as e:
+        messages.error(request, f'Backtest failed: {str(e)}')
+        return redirect('trading:portfolio_manager')
+
+
+def portfolio_backtest_results(request):
+    """Display portfolio backtest results."""
+    results = request.session.get('portfolio_backtest_results')
+    
+    if not results:
+        messages.warning(request, 'No backtest results found')
+        return redirect('trading:portfolio_manager')
+    
+    context = {
+        'results': results,
+    }
+    
+    return render(request, 'trading/portfolio_backtest_results.html', context)
